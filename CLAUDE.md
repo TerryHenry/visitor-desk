@@ -16,8 +16,9 @@ server.js still runs on a Mac for development (`node server.js`), so keep it cro
   The server injects `window.KIOSK_BACKEND="/api/guest-pass"` so the kiosk talks to it with no setup.
 - `config.json` (gitignored; holds the API secret). Optional at first start: the admin panel's RUCKUS One connection
   section writes it (mode 600). `config.example.json` shows every setting for hand editing.
-- `README.md`: the VM appliance only (download, deploy, first setup, features, updates, console). `vm/README.md`: building,
-  testing and the release checklist.
+- `README.md`: overview of the VM appliance (key features, links). `docs/getting-started.md` (download → first check-in),
+  `docs/user-guide.md` (visitors, front desk, every admin setting, maintenance, troubleshooting; built from the in-app
+  `HELP` topics, keep both in step). `vm/README.md`: building, testing and the release checklist. Docs cover the VM only.
 - `data/visits/<id>/`: visit.json, photo.jpg, id.jpg per check-in. Deleted automatically after the retention period.
 
 ## Kiosk features (public/index.html)
