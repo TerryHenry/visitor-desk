@@ -2183,7 +2183,7 @@ async function updRender(){
     : ["queued","installing","rolling-back"].includes(st.state) ? `<p class="notice">An update is being installed (${esc(when)}). The kiosk server restarts when it's done.</p>` : "";
   if (!u.available){
     b.innerHTML = `<p class="help">Installed: <b>Visitor Desk ${v(u.current)}</b> · Node.js ${esc(u.node)}</p>
-      <p class="hint">Updates from here work on the Visitor Desk VM. On this computer, replace the program files (see the README) and restart it.</p>`;
+      <p class="hint">Updates from here work on the Visitor Desk VM. This server isn't running on one.</p>`;
     return;
   }
   b.innerHTML = `<p class="help">Installed: <b>Visitor Desk ${v(u.current)}</b> · Node.js ${esc(u.node)}</p>${last}

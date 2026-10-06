@@ -1,24 +1,30 @@
 # Visitor Desk
 
-Visitor check-in and Wi-Fi for RUCKUS One.
+Visitor check-in and Wi-Fi for RUCKUS One, as a ready-to-run virtual appliance for VMware ESXi and vSphere.
 
-A small server that runs the check-in kiosk page and creates Wi-Fi access in RUCKUS One.
-It handles all three access types you can pick in the kiosk admin settings:
+Visitors check in on a lobby tablet. Visitor Desk creates their Wi-Fi access in RUCKUS One, keeps a record of the
+visit and tells their host they've arrived. It handles all three access types you can pick in the admin settings:
 
-| Kiosk setting | What the server does |
+| Access type | What Visitor Desk does |
 |---|---|
 | Captive portal with guest pass code | Creates a guest user on your guest pass network. RUCKUS One makes the code and can email or text it. |
 | Personal password per visitor (DPSK) | Creates a DPSK passphrase in your DPSK service, with the device limit and expiry you set. |
 | Shared password | Logs the visitor and hands out your shared Wi-Fi password. Nothing is created in RUCKUS One. |
 
-It also saves each visit (details, photo, license image) in `data/visits/` and deletes them after the retention period.
-Host alerts go to a Slack or Teams webhook if you set one.
-
-No `npm install` is needed. It only uses what comes with Node.js.
+The appliance is Ubuntu Server 24.04 LTS with Visitor Desk, Node.js and HTTPS built in. Nothing is downloaded when
+the VM starts; the first boot works without internet (RUCKUS One still needs it).
 
 ---
 
-## 1. Get your RUCKUS One API credentials
+## 1. Download
+
+From the [Releases](../../releases) page, download:
+
+- `visitor-desk-<version>.ova`: the virtual machine, for a new install.
+- `visitor-desk-update-<version>-<build>.kup`: the signed update, for a VM you already have.
+- `SHA256SUMS-<version>.txt`: checksums, to check the downloads (`shasum -a 256 -c SHA256SUMS-<version>.txt`).
+
+## 2. Get your RUCKUS One API credentials
 
 1. Log in to RUCKUS One.
 2. Go to **Administration > Account Management > Settings**.
@@ -28,39 +34,65 @@ No `npm install` is needed. It only uses what comes with Node.js.
 
 If you manage customers as an MSP, you'll also need the customer's tenant ID.
 
-## 2. Set up on your MacBook
+## 3. Deploy the VM
 
-1. Install Node.js 20 LTS from https://nodejs.org (or `brew install node`).
-2. Open Terminal in this folder and start the server:
-   ```
-   caffeinate -s node server.js
-   ```
-   (`caffeinate` keeps the Mac awake while the kiosk runs.) No `config.json` is needed yet.
-3. On the Mac, open `http://localhost:3000` and tap **Admin**. The first time, create the admin user
-   (password 8 to 20 characters). From another device you also need the **setup code** printed in the server window.
-   Then go to **RUCKUS One connection**:
+1. ESXi Host Client: **Virtual Machines → Create / Register VM → Deploy a virtual machine from an OVF or OVA file**,
+   and pick `visitor-desk-<version>.ova` (vSphere Client: **Deploy OVF Template**).
+2. Choose a datastore and the network the tablets can reach. Thin provisioning is fine.
+3. Power it on. The first boot takes a minute or two.
+4. Open the VM console. Above the login prompt it shows:
+   - **Kiosk and staff sign-in:** `https://<vm-address>/`
+   - **Tablet first-time setup:** `http://<vm-address>/setup`
+   - **Admin setup code:** needed once, to create the first admin user from your browser.
+
+Hardware: 2 vCPU, 2 GB RAM, 16 GB disk (thin), VMXNET3 network, VMware paravirtual SCSI, BIOS, hardware version
+vmx-10 (ESXi 5.5 and later). VMware Tools (open-vm-tools) is included.
+
+**No DHCP on that network (or no address shown)?** Log in on the console as kioskadmin (see
+[Console and maintenance](#console-and-maintenance)) and run `kiosk network` to set a static address. It asks for the
+address with prefix (for example `192.168.10.50/24`), gateway and DNS servers. Or in one line:
+`kiosk network static 192.168.10.50/24 192.168.10.1 192.168.10.1,1.1.1.1`. `kiosk network dhcp` switches back.
+Without DHCP the boot waits about 30 seconds for an address and then carries on.
+
+Give the VM a fixed address (static, or a DHCP reservation), so tablets keep finding it. The HTTPS certificate follows
+the address automatically, and tablets don't need the certificate installed again.
+
+## 4. First setup
+
+1. In a browser, open `https://<vm-address>/` (accept the certificate warning this once, or install the certificate
+   from `/setup` first), tap **Admin**, and create the admin user with the setup code (8 digits; the dash is optional;
+   password 8 to 20 characters). Or log in on the console and run `kiosk create-admin` (no code needed there).
+2. Go to **RUCKUS One connection**:
    - Pick the region, enter the tenant ID, client ID and client secret, then click **Connect**.
-     The secret is saved in `config.json` on the Mac and is never shown again.
+     The secret is saved on the VM and is never shown again.
    - Pick the venue, the visitor Wi-Fi network and (for DPSK) the DPSK service from the lists.
      Choosing a network also sets the access type and SSID.
    - Click **Save settings**.
-4. Set up the tablet once, so its camera works (browsers only allow the camera over https):
-   - The server prints a **setup** address, e.g. `http://192.168.1.50:3000/setup`. Open it on the tablet.
+3. Set up each tablet once, so its camera works (browsers only allow the camera over https):
+   - On the tablet, open `http://<vm-address>/setup`.
    - Follow the steps there to install the kiosk certificate. On iPad: download it, install the profile in Settings,
      then turn it on under **Settings → General → About → Certificate Trust Settings**.
-   - Tap **Open the kiosk**. It opens at `https://192.168.1.50:3443`. Add it to the home screen.
-   If macOS asks whether to allow incoming connections for node, click **Allow**.
-   The certificate is made by the server with `openssl` (built into macOS and Raspberry Pi OS; on Windows install
-   Git for Windows or OpenSSL). It only works for local addresses, never for real websites.
+   - Tap **Open the kiosk**. It opens at `https://<vm-address>/`. Add it to the home screen.
+   The certificate is made by the VM and only works for local addresses, never for real websites.
+4. On the tablet, open **Admin**, sign in, and pair it under **Kiosk tablets** (see below).
 5. To tell hosts their visitor has arrived: in **Admin**, turn on **Tell the host their visitor has arrived**, add each
-   person to the host list as `name, email, mobile`, and fill in **Host alerts**:
+   person to the host list as `name, email, mobile`, and fill in **Email and text messages**:
    - Email: your mail server (for example `smtp.office365.com` or `smtp.gmail.com`, port 587, STARTTLS) and an app password.
    - Text: a Twilio account SID, auth token and Twilio phone number.
-   Use **Send test email** / **Send test text** to check. Contacts and passwords stay in `config.json` on the Mac.
-6. On the tablet, open **Admin** and set the kiosk options (fields, look, host list). These are saved on the tablet.
+   Use **Send test email** / **Send test text** to check.
+6. Set the kiosk options (fields, look, location name, host list) under **Admin**. **Use this look on every kiosk**
+   shares the look with all tablets.
 
-You can still edit `config.json` by hand (see `config.example.json`), and `node server.js check` tests the login
-and lists your venues, networks and DPSK services.
+## 5. Test it
+
+Check in a test visitor with each access type you plan to use, then look in RUCKUS One:
+
+- **Guest pass:** Clients > Wireless > Guest Pass Credentials should show the new guest.
+- **DPSK:** Network Control > My Services > DPSK > your service > Passphrases.
+  DPSK creation is processed in the background, so the passphrase can take a few seconds to work.
+
+If RUCKUS One rejects something, **Admin → Recent problems** shows what went wrong and what to do.
+`kiosk check` on the console tests the RUCKUS One login and lists your venues, networks and DPSK services.
 
 ## Staff sign-in
 
@@ -69,8 +101,8 @@ and lists your venues, networks and DPSK services.
 - Passwords are 8 to 20 characters. Each user can turn on **two-step sign-in** (an authenticator app code) under
   **Users and sign-in** (reception: **My account**).
 - 5 wrong tries lock that device out for 5 minutes. Closing the admin panel signs out; an idle panel closes after 10 minutes.
-- Forgot the admin password or lost the phone? On the server run `node server.js reset-admin` (removes admin users,
-  keeps reception users), restart, and create a new admin. An admin can also set a new password for any other user,
+- Forgot the admin password or lost the phone? On the VM console run `kiosk reset-admin` (removes admin users,
+  keeps reception users), then create a new admin with the setup code (`kiosk setup-code`). An admin can also set a new password for any other user,
   which also turns off that user's two-step sign-in.
 - Blocked visitors see "Please see reception" at check-in and get no Wi-Fi. A match is the same email, phone number
   or full name. The attempt shows in the visitor records.
@@ -142,110 +174,62 @@ Turn these on under **Admin → Kiosk buttons and languages** (they need the kio
 - **Find a person** (Visitor records, admins): for privacy requests, download everything about one person as a file,
   or delete it all.
 
-## Automated tests
+## Updating
 
-```
-npm test
-```
+Updates replace only the app and the VM's helper files. Settings, visitor records, certificates, users and the shared
+look stay as they are. Updates are signed: the VM refuses any file that isn't signed with the Visitor Desk update key.
 
-Runs about 60 checks in a few seconds, with nothing to install (Node's built-in test runner). Each test starts the
-server on a throwaway copy with a fake RUCKUS One, a fake mail server and a fake Twilio, so nothing real is touched:
-check-ins in all three Wi-Fi modes, check-out, invites and CSV import, returning visitors, blocking and staff alerts,
-users and two-step sign-in, reports (CSV and PDF), privacy requests, devices and floor plans, the page's security
-headers, HTTPS-only access from other devices, tablet pairing and rate limits, plus the kiosk page's translations and
-helpers. Run it before building an update.
+**From the admin panel (VMs on 1.8.0 and later):** download the `.kup` from [Releases](../../releases), then
+**Admin → Updates → Choose update file**, check the version and tap **Install now**. The VM checks the signature,
+installs, restarts (about 20 seconds) and goes back by itself if the new version doesn't start.
+**Go back to …** returns to the previous version.
 
-For a VM: `vm/test-boot.sh` boots the built OVA under emulation, then `vm/smoke-test.sh` checks it (or
-`vm/smoke-test.sh 192.168.1.50` for a deployed VM): HTTPS, redirects, security headers, the certificate and sign-in.
+**On the console (VMs older than 1.8.0):** put the `.kup` somewhere the VM can download it (for example
+`python3 -m http.server 8000` in the download folder on your computer), then on the VM console:
+`kiosk update http://<your computer>:8000/<file>.kup`. It shows the installed and new versions and asks before
+installing. If the kiosk doesn't answer within 30 seconds afterwards, the update is undone automatically.
+VMs older than 1.4.1 should run the update from a copy of the updater:
+`sudo cp /usr/local/sbin/kiosk-update /tmp/ku && sudo bash /tmp/ku <url>`.
 
-## Emergencies, leaving, hosts and analytics
+`kiosk rollback` goes back to the version before the last update; `kiosk version` shows what's installed.
 
-- **Emergency message** (Visitor records → On site now, admins and front desk): pick Evacuate, Shelter in place or All
-  clear (or write your own), send it by text and/or email to everyone checked in (or only those with a device connected
-  now). A **roll call** follows: tap **Safe** as people arrive at the assembly point; every staff screen shows a red bar
-  with the count until it's ended. Visitors can't reply (their phones usually can't reach the kiosk server).
-- **Leaving without checking out** (admin): visitors whose devices haven't been on the Wi-Fi for a while (2 hours by
-  default) show as **Probably left**; optionally they're checked out automatically (and their Wi-Fi ended).
-- **Host links** (admin): send each host a personal link to a page where they add their own expected visitors and see
-  who has arrived. Arrival alerts include an **On my way** link: the visitor sees "Dana is on the way to meet you" on the
-  kiosk, and gets a text. Hosts need to reach the kiosk server (your network), and may see a certificate warning the
-  first time unless they install it from `/setup`.
-- **Analytics** (Visitor records tab): visits, different and returning visitors, visit length, busy times (day × hour),
-  how visits ended, where visitors spend time (by access point), top hosts/companies/reasons and Wi-Fi data used.
+## Console and maintenance
 
-## 3. Test it
+- Log in as **kioskadmin**, password **visitorkiosk**. You must choose a new password at the first login.
+- Type `kiosk` for maintenance commands: `kiosk status`, `kiosk logs`, `kiosk restart`, `kiosk setup-code`,
+  `kiosk reset-admin` (forgotten admin password or lost 2FA phone), `kiosk check` (RUCKUS One), `kiosk address`,
+  `kiosk network` (DHCP or static IP), `kiosk version`, `kiosk update`, `kiosk rollback`, `kiosk backup`,
+  `kiosk restore`, `kiosk firewall`, `kiosk create-admin` (first admin, no setup code needed).
+- SSH doesn't accept passwords. To use SSH, add your public key to `/home/kioskadmin/.ssh/authorized_keys`.
+- **Backups:** `kiosk backup` asks for a password and writes an encrypted file (settings, users, visitor records,
+  certificates). Copy it off the VM, for example `scp kioskadmin@<vm>:visitor-desk-backup-*.enc .`.
+  `kiosk restore <file>` puts it back on this or a new VM (the current data is saved first).
+- Firewall (turned on automatically): 80 and 443 from anywhere, SSH only from private networks (10.x, 172.16–31.x,
+  192.168.x). `kiosk firewall` shows the rules. To allow SSH from elsewhere: `sudo ufw allow from <address> to any port 22 proto tcp`.
+- Ubuntu installs security updates automatically when the VM has internet access.
+- Two-step sign-in codes depend on the correct time. The VM keeps time with NTP (ntp.ubuntu.com); if it has no
+  internet, point it at your own NTP server in `/etc/systemd/timesyncd.conf`.
 
-Check in a test visitor with each mode you plan to use, then look in RUCKUS One:
+## A few RUCKUS One details
 
-- **Guest pass:** Clients > Wireless > Guest Pass Credentials should show the new guest.
-- **DPSK:** Network Control > My Services > DPSK > your service > Passphrases.
-  DPSK creation is processed in the background, so the passphrase can take a few seconds to work.
+Some API details weren't fully documented and may need a tweak for your account (in `/opt/visitor-kiosk/config.json`
+on the VM, then `kiosk restart`):
 
-The server window shows one line per check-in, and the full error if RUCKUS One rejects something.
-
-A few API details weren't fully documented and may need a tweak for your account:
-
-- **Guest pass delivery names.** The kiosk sends `MAIL`, `SMS` or `PRINT` (from the RUCKUS One guest API). If RUCKUS One ever renames them, change `deliveryMethodNames`.
+- **Guest pass delivery names.** Visitor Desk sends `MAIL`, `SMS` or `PRINT` (from the RUCKUS One guest API). If RUCKUS One ever renames them, change `deliveryMethodNames`.
 - **Guest pass phone number.** RUCKUS One requires a phone number for guest users. If you hide the phone field in the kiosk, set `fallbackPhone` (such as your front desk number).
 - **DPSK expiry format.** If you get an error about expiration, set `dpsk.expirationFormat` to `"date"`.
 
-## 4. Settings reference (`config.json`)
-
-| Setting | Meaning |
-|---|---|
-| `port` | Port the kiosk runs on. Default 3000. |
-| `ruckus.*` | API login. You can use environment variables instead: `R1_REGION`, `R1_TENANT_ID`, `R1_CLIENT_ID`, `R1_CLIENT_SECRET`. |
-| `guestPass.wifiNetworkId` | Your captive portal guest pass network. |
-| `dpsk.poolId` | Your DPSK service. |
-| `psk.password` | Shared Wi-Fi password. If empty, the one in the kiosk settings is used. |
-| `notifications.hostWebhookUrl` | Slack or Teams incoming webhook for "your visitor is here" messages. |
-| `storage.storeIdImages` | `false` records that ID was checked without saving the image. |
-| `storage.retentionDays` | Maximum days to keep visitor records. The kiosk setting can make it shorter, not longer. |
-| `security.allowedIps` | List of tablet IP addresses allowed to use the server. Empty means any device on your network. |
-| `security.users` | Staff sign-in accounts, managed in **Admin → Users and sign-in** (passwords stored as hashes). |
-
-## 5. Moving to Windows or a Raspberry Pi later
-
-Copy the whole folder, including `config.json` and `data/`, to the new machine.
-
-**Windows**
-1. Install Node.js 20 LTS from https://nodejs.org.
-2. In PowerShell, in this folder: `node server.js`
-3. Click **Allow access** when Windows Firewall asks (Private networks).
-4. To start automatically, create a Task Scheduler task that runs `node.exe` with argument `server.js`, "Start in" set to this folder, trigger "At startup".
-
-**Raspberry Pi (Raspberry Pi OS)**
-1. Install Node.js 20:
-   ```
-   curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-   sudo apt install -y nodejs
-   ```
-2. Copy this folder to `/home/pi/ruckus-kiosk` and test with `node server.js`.
-3. To run at boot, create `/etc/systemd/system/ruckus-kiosk.service`:
-   ```
-   [Unit]
-   Description=Visitor Desk
-   After=network-online.target
-   Wants=network-online.target
-
-   [Service]
-   WorkingDirectory=/home/pi/ruckus-kiosk
-   ExecStart=/usr/bin/node server.js
-   Restart=always
-   User=pi
-
-   [Install]
-   WantedBy=multi-user.target
-   ```
-   Then: `sudo systemctl enable --now ruckus-kiosk`
-
 ## Security notes
 
-- `config.json` holds your API secret. Don't share it or commit it to Git (it's in `.gitignore`).
+- The RUCKUS One secret stays on the VM and is never sent to a browser.
 - Staff sign in (passwords, optional two-step sign-in). Check-ins come only from paired tablets once one is paired.
-  `allowedIps` can limit it further.
-- DPSK passwords follow the chosen DPSK service's passphrase format in RUCKUS One (like DwellLink). The admin panel
-  shows the format and warns if it's easy to guess (under about a trillion combinations, for example 8 digits).
-  Raise the length or pick a stronger format for that service in RUCKUS One.
+- DPSK passwords follow the chosen DPSK service's passphrase format in RUCKUS One. The admin panel shows the format
+  and warns if it's easy to guess (under about a trillion combinations, for example 8 digits). Raise the length or
+  pick a stronger format for that service in RUCKUS One.
 - The kiosk page sends a strict Content Security Policy and the usual security headers.
-- `data/visits/` contains photos and ID images. Keep the machine's disk encrypted (FileVault on Mac, BitLocker on Windows) and check your local privacy rules.
+- Visitor records include photos and ID images. Keep the datastore encrypted if your privacy rules require it, set
+  how long records are kept under **Admin → Privacy**, and keep backups somewhere safe.
+
+## Building it yourself
+
+See [vm/README.md](vm/README.md) for building the OVA and signed updates, and running the automated tests.

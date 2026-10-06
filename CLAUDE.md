@@ -6,7 +6,8 @@ This project was started in a claude.ai chat and moved here. This file holds the
 
 ## What it is
 A lobby check-in kiosk (tablet web page) that collects visitor details and creates Wi-Fi access through the RUCKUS One API.
-Runs on the owner's MacBook for now; Windows or Raspberry Pi later, so keep everything cross-platform.
+Shipped as a VMware ESXi/vSphere appliance (vm/); README.md documents only the VM (deploy, setup, updates).
+server.js still runs on a Mac for development (`node server.js`), so keep it cross-platform.
 
 ## Files
 - `server.js`: Node 18+ server, zero npm dependencies (built-in `http` and `fetch`). Serves the kiosk page and the API.
@@ -15,7 +16,8 @@ Runs on the owner's MacBook for now; Windows or Raspberry Pi later, so keep ever
   The server injects `window.KIOSK_BACKEND="/api/guest-pass"` so the kiosk talks to it with no setup.
 - `config.json` (gitignored; holds the API secret). Optional at first start: the admin panel's RUCKUS One connection
   section writes it (mode 600). `config.example.json` shows every setting for hand editing.
-- `README.md`: setup for Mac, Windows (Task Scheduler), Raspberry Pi (systemd).
+- `README.md`: the VM appliance only (download, deploy, first setup, features, updates, console). `vm/README.md`: building,
+  testing and the release checklist.
 - `data/visits/<id>/`: visit.json, photo.jpg, id.jpg per check-in. Deleted automatically after the retention period.
 
 ## Kiosk features (public/index.html)
