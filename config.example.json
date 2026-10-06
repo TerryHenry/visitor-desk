@@ -1,0 +1,62 @@
+{
+  "port": 3000,
+  "ruckus": {
+    "region": "na",
+    "tenantId": "",
+    "clientId": "",
+    "clientSecret": "",
+    "delegatedTenantId": ""
+  },
+  "guestPass": {
+    "wifiNetworkId": "",
+    "fallbackPhone": "",
+    "deliveryMethodNames": {
+      "email": "MAIL",
+      "sms": "SMS",
+      "print": "PRINT"
+    }
+  },
+  "dpsk": {
+    "poolId": "",
+    "expirationFormat": "iso",
+    "phoneCountryCode": "1"
+  },
+  "psk": {
+    "password": ""
+  },
+  "notifications": {
+    "hostWebhookUrl": "",
+    "email": {
+      "host": "",
+      "port": 587,
+      "security": "starttls",
+      "user": "",
+      "pass": "",
+      "from": ""
+    },
+    "sms": {
+      "accountSid": "",
+      "authToken": "",
+      "from": ""
+    }
+  },
+  "storage": {
+    "storeIdImages": true,
+    "retentionDays": 30
+  },
+  "security": {
+    "allowedIps": [],
+    "users": []
+  },
+  "hosts": [
+    {
+      "name": "Jordan Lee",
+      "email": "jordan@example.com",
+      "phone": "813-555-0142"
+    }
+  ],
+  "https": {
+    "enabled": true,
+    "port": 3443
+  }
+}

@@ -1,0 +1,125 @@
+#!/bin/bash
+# Maintenance helper for the Visitor Desk VM.
+set -u
+APP=/opt/visitor-kiosk
+run_app() { sudo -u kiosk /opt/node/bin/node "$APP/server.js" "$@"; }
+
+# Network: DHCP or a static address, written as a netplan file (replaces cloud-init's DHCP-only config).
+IPV4='^([0-9]{1,3}\.){3}[0-9]{1,3}$'
+network() {
+  local ifc mode addr gw dns dom yaml
+  ifc=$(ip -o link show | awk -F': ' '$2 != "lo" { sub(/@.*/, "", $2); print $2; exit }')
+  [ -n "$ifc" ] || { echo "No network adapter found. Check the VM has a network adapter connected."; return 1; }
+  echo "Network adapter: $ifc"
+  echo "  Address: $(ip -4 -brief address show dev "$ifc" | awk '{print $3}' | grep . || echo none)"
+  echo "  Gateway: $(ip -4 route show default | awk '{print $3; exit}' | grep . || echo none)"
+  mode=${1:-}
+  if [ -z "$mode" ]; then read -rp "Use DHCP or a static address? [dhcp/static] " mode; fi
+  case "$mode" in
+    d|dhcp|DHCP)
+      yaml="network:\n  version: 2\n  ethernets:\n    $ifc:\n      dhcp4: true\n" ;;
+    s|static)
+      addr=${2:-}; gw=${3:-}; dns=${4:-}; dom=${5:-}
+      [ -n "$addr" ] || read -rp "IP address with prefix (for example 192.168.10.50/24): " addr
+      [[ "$addr" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$ ]] || { echo "Use an address like 192.168.10.50/24."; return 1; }
+      [ -n "$gw" ] || read -rp "Gateway (for example 192.168.10.1): " gw
+      [[ "$gw" =~ $IPV4 ]] || { echo "Use a gateway like 192.168.10.1."; return 1; }
+      [ -n "$dns" ] || read -rp "DNS servers, comma-separated (for example 192.168.10.1,1.1.1.1): " dns
+      dns=$(echo "$dns" | tr -d ' ')
+      for d in ${dns//,/ }; do [[ "$d" =~ $IPV4 ]] || { echo "\"$d\" isn't an IPv4 address."; return 1; }; done
+      [ $# -ge 2 ] || read -rp "Search domain (optional, press Enter to skip): " dom
+      yaml="network:\n  version: 2\n  ethernets:\n    $ifc:\n      dhcp4: false\n      addresses: [$addr]\n      routes:\n        - to: default\n          via: $gw\n      nameservers:\n        addresses: [${dns//,/, }]\n"
+      [ -n "$dom" ] && yaml+="        search: [$dom]\n" ;;
+    *) echo "Choose dhcp or static."; return 1 ;;
+  esac
+  printf "$yaml" | sudo tee /etc/netplan/90-visitor-kiosk.yaml >/dev/null
+  sudo chmod 600 /etc/netplan/90-visitor-kiosk.yaml
+  # cloud-init's own file would still ask for DHCP; keep it out of the way and stop cloud-init rewriting it.
+  [ -f /etc/netplan/50-cloud-init.yaml ] && sudo mv /etc/netplan/50-cloud-init.yaml /etc/netplan/50-cloud-init.yaml.disabled
+  echo "network: {config: disabled}" | sudo tee /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg >/dev/null
+  echo "Applying..."
+  sudo netplan apply && sleep 4
+  echo "  Address now: $(ip -4 -brief address show dev "$ifc" | awk '{print $3}' | grep . || echo "none yet (DHCP may take a moment)")"
+  sudo systemctl restart visitor-kiosk   # picks up the new address for its HTTPS certificate
+  sudo /usr/local/sbin/kiosk-console
+  echo "Done. Tablets and browsers use https://$(ip -4 -brief address show dev "$ifc" | awk '{print $3}' | cut -d/ -f1)/"
+}
+
+# Encrypted backups of what's unique to this VM: settings and users (config.json), visitor records (data/), HTTPS
+# certificates (certs/) and the shared look. AES-256 with a password (openssl, PBKDF2 600,000 rounds).
+KEEP=(config.json data certs shared-look.json)
+backup() {
+  local out=${1:-$HOME/visitor-desk-backup-$(date +%Y%m%d-%H%M).enc} p1 p2 files
+  read -rsp "Backup password (8+ characters; you'll need it to restore): " p1; echo
+  read -rsp "Type it again: " p2; echo
+  [ "$p1" = "$p2" ] || { echo "The passwords don't match."; return 1; }
+  [ ${#p1} -ge 8 ] || { echo "Use at least 8 characters."; return 1; }
+  files=$(sudo bash -c "cd $APP && ls -d ${KEEP[*]} 2>/dev/null" | tr '\n' ' ')
+  ( umask 077; sudo tar -C "$APP" -czf - $files | KIOSK_BK="$p1" openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -pass env:KIOSK_BK -out "$out" ) \
+    || { echo "The backup failed."; rm -f "$out"; return 1; }
+  echo "Backup saved: $out ($(du -h "$out" | cut -f1))"
+  echo "Copy it off this VM, e.g. on your computer:  scp kioskadmin@$(hostname -I | awk '{print $1}'):$out ."
+}
+restore() {
+  local file=${1:-} p
+  [ -f "$file" ] || { echo "Usage: kiosk restore <backup file>"; return 1; }
+  read -rsp "Backup password: " p; echo
+  KIOSK_BK="$p" openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass env:KIOSK_BK -in "$file" 2>/dev/null | tar -tzf - >/dev/null 2>&1 \
+    || { echo "Wrong password, or the file isn't a kiosk backup."; return 1; }
+  read -rp "This replaces the settings, users and visitor records on this VM. Continue? [y/N] " a
+  [[ "$a" =~ ^[Yy] ]] || { echo "Nothing changed."; return 0; }
+  local before=/opt/visitor-kiosk-before-restore-$(date +%Y%m%d-%H%M).tar.gz
+  sudo systemctl stop visitor-kiosk
+  sudo bash -c "cd $APP && tar -czf $before \$(ls -d ${KEEP[*]} 2>/dev/null) && chmod 600 $before && rm -rf ${KEEP[*]}"
+  KIOSK_BK="$p" openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass env:KIOSK_BK -in "$file" | sudo tar -C "$APP" -xzf - --no-same-owner
+  sudo chown -R kiosk:kiosk "$APP"; sudo systemctl start visitor-kiosk; sleep 3
+  curl -fs http://127.0.0.1/health >/dev/null && echo "Restored. The kiosk is running. (What was here before: $before)" \
+    || echo "Restored, but the kiosk isn't answering yet. Check: kiosk logs"
+}
+
+case "${1:-help}" in
+  status)      systemctl status visitor-kiosk --no-pager ;;
+  logs)        journalctl -u visitor-kiosk -n "${2:-100}" --no-pager ;;
+  follow)      journalctl -u visitor-kiosk -f ;;
+  restart)     sudo systemctl restart visitor-kiosk && echo "Kiosk server restarted." ;;
+  setup-code)  if sudo test -f "$APP/setup-code.txt"; then echo "Setup code: $(sudo cat "$APP/setup-code.txt")"; else echo "No setup code: an admin user already exists."; fi ;;
+  reset-admin) run_app reset-admin && sudo systemctl restart visitor-kiosk && sleep 2 && "$0" setup-code ;;
+  check)       run_app check ;;
+  address)     ip -4 -brief address show scope global ;;
+  network)     shift; network "$@" ;;
+  update)      shift; [ $# -ge 1 ] || { echo "Usage: kiosk update <file or URL of a .kup update>"; exit 1; }; sudo /usr/local/sbin/kiosk-update "$@" ;;
+  rollback)    sudo /usr/local/sbin/kiosk-update --rollback ;;
+  version)     sudo /opt/node/bin/node -e 'const v=require("/opt/visitor-kiosk/.version.json"); console.log("Visitor Desk " + v.version + " (build " + v.build + "), Node.js " + process.version)' 2>/dev/null || echo "Version unknown" ;;
+  backup)      shift; backup "$@" ;;
+  restore)     shift; restore "$@" ;;
+  firewall)    sudo ufw status verbose ;;
+  create-admin)
+    # On the server itself no setup code is needed (the request comes from this machine).
+    read -rp "Admin user name: " KIOSK_U; read -rsp "Password (8 to 20 characters): " KIOSK_P; echo
+    KIOSK_U="$KIOSK_U" KIOSK_P="$KIOSK_P" /opt/node/bin/node -e '
+      fetch("http://127.0.0.1/api/admin/setup", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: process.env.KIOSK_U, password: process.env.KIOSK_P }) })
+        .then(r => r.json()).then(j => console.log(j.token ? "Admin created. Sign in with it in the browser." : j.error))
+        .catch(e => console.log("Couldn'"'"'t reach the kiosk server: " + e.message))'
+    unset KIOSK_P; sudo /usr/local/sbin/kiosk-console ;;
+  *)
+    cat <<'EOF'
+kiosk status        is the kiosk server running?
+kiosk logs [N]      last N lines of the server log (default 100)
+kiosk follow        watch the server log live
+kiosk restart       restart the kiosk server
+kiosk setup-code    show the first-time admin setup code
+kiosk create-admin  create the first admin user here (no setup code needed)
+kiosk reset-admin   remove admin users (reception users stay), then create a new admin in the browser
+kiosk check         test the RUCKUS One connection
+kiosk version       show the installed kiosk version
+kiosk update <URL>  install a signed update (.kup) from a URL or file; asks first, rolls back if it fails
+kiosk rollback      go back to the version before the last update
+kiosk backup [file] password-encrypted backup of settings, users, visitor records and certificates
+kiosk restore FILE  put a backup back (keeps a copy of what was there before)
+kiosk firewall      show the firewall (80/443 open; SSH from private networks only)
+kiosk address       show this VM's IP address
+kiosk network       set DHCP or a static IP address (also: kiosk network static 192.168.10.50/24 192.168.10.1 192.168.10.1)
+EOF
+    ;;
+esac

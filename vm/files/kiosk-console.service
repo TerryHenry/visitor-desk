@@ -1,0 +1,11 @@
+[Unit]
+Description=Show the Visitor Desk address on the VM console
+# Written before the login prompt appears, and refreshed by the timer.
+Before=getty.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/kiosk-console
+
+[Install]
+WantedBy=multi-user.target

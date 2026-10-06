@@ -1,0 +1,20 @@
+#!/bin/bash
+# Firewall for the Visitor Desk VM. Runs as root just before the kiosk server starts (visitor-kiosk.service
+# ExecStartPre); does its work once (marker file), so it's safe to run on every start.
+#   Anyone:            80/tcp (redirects to https, tablet setup), 443/tcp (kiosk, admin)
+#   Private networks:  22/tcp (SSH: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
+# Change it later with ufw, e.g. "sudo ufw allow from 203.0.113.5 to any port 22 proto tcp". "kiosk firewall" shows it.
+MARK=/etc/visitor-kiosk/firewall-v1
+[ -f "$MARK" ] && exit 0
+command -v ufw >/dev/null 2>&1 || { echo "kiosk-harden: ufw isn't installed; no firewall set up"; exit 0; }
+ufw --force reset >/dev/null
+ufw default deny incoming >/dev/null
+ufw default allow outgoing >/dev/null
+ufw allow 80/tcp comment "Visitor Desk (redirects to https)" >/dev/null
+ufw allow 443/tcp comment "Visitor Desk" >/dev/null
+for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16; do
+  ufw allow from "$net" to any port 22 proto tcp comment "SSH from private networks" >/dev/null
+done
+ufw --force enable >/dev/null
+mkdir -p /etc/visitor-kiosk && touch "$MARK"
+echo "kiosk-harden: firewall on (80, 443 from anywhere; SSH from private networks only)"

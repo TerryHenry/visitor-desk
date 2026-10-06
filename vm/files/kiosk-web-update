@@ -1,0 +1,29 @@
+#!/bin/bash
+# Installs an update (or goes back to the previous version) that a signed-in admin asked for in the admin panel.
+# Started as root by kiosk-web-update.path when the kiosk server drops a request in /opt/visitor-kiosk/data/updates:
+#   incoming.kup       install it (kiosk-update checks the signature against /etc/visitor-kiosk/update-signing.pub)
+#   rollback.request   go back to the version before the last update
+# The kiosk server itself can't install anything (it runs as "kiosk"); this keeps the signature check with root.
+set -u
+DIR=/opt/visitor-kiosk/data/updates
+STATUS=$DIR/status.json LOG=$DIR/last.log WORK=/var/tmp/kiosk-web-update.kup
+ver() { /opt/node/bin/node -e 'try{const v=require("/opt/visitor-kiosk/.version.json");console.log(v.version)}catch{console.log("")}'; }
+status() {   # status <state> [message] [to version]: keeps the target version the admin panel wrote until the end
+  /opt/node/bin/node -e 'const fs=require("fs"),[f,state,msg,from,to]=process.argv.slice(1);let p={};try{p=JSON.parse(fs.readFileSync(f,"utf8"))}catch{}
+    fs.writeFileSync(f,JSON.stringify({state,message:msg,from:from||p.from,to:to||p.to,rollback:p.rollback,at:new Date().toISOString()})+"\n")' \
+    "$STATUS" "$1" "${2:-}" "${FROM:-}" "${3:-}"
+  chown kiosk:kiosk "$STATUS" 2>/dev/null; chmod 640 "$STATUS"
+}
+FROM=$(ver)
+if [ -f "$DIR/rollback.request" ]; then
+  rm -f "$DIR/rollback.request"
+  status "rolling-back"
+  if /usr/local/sbin/kiosk-update --rollback > "$LOG" 2>&1; then status "rolled-back" "Back on the previous version." "$(ver)"; else status "failed" "Going back didn't work. See the log." "$(ver)"; fi
+elif [ -f "$DIR/incoming.kup" ]; then
+  mv -f "$DIR/incoming.kup" "$WORK"
+  status "installing"
+  if /usr/local/sbin/kiosk-update "$WORK" -y > "$LOG" 2>&1; then status "done" "Installed." "$(ver)"; else status "failed" "$(tail -1 "$LOG")" "$(ver)"; fi
+  rm -f "$WORK"
+fi
+chown kiosk:kiosk "$LOG" 2>/dev/null; chmod 640 "$LOG" 2>/dev/null
+exit 0

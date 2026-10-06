@@ -1,0 +1,6 @@
+[Unit]
+Description=Install a Visitor Desk update started from the admin panel
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/kiosk-web-update

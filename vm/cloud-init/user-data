@@ -1,0 +1,38 @@
+#cloud-config
+# First boot of the Visitor Desk appliance. Everything is already on the disk; this only sets it up.
+hostname: visitor-kiosk
+manage_etc_hosts: true
+
+users:
+  - name: kioskadmin
+    gecos: Visitor Desk maintenance
+    groups: [sudo, adm, systemd-journal]
+    shell: /bin/bash
+    lock_passwd: false
+    sudo: "ALL=(ALL) ALL"
+  - name: kiosk
+    system: true
+    no_create_home: true
+    homedir: /opt/visitor-kiosk
+    shell: /usr/sbin/nologin
+
+# Console password; it must be changed at the first login.
+chpasswd:
+  expire: true
+  users:
+    - name: kioskadmin
+      type: hash
+      password: "@PASSWORD_HASH@"
+
+# SSH stays closed to passwords. To use SSH, add a key to ~kioskadmin/.ssh/authorized_keys from the console.
+ssh_pwauth: false
+
+runcmd:
+  - [ chown, -R, "kiosk:kiosk", /opt/visitor-kiosk ]
+  - [ chmod, "0750", /opt/visitor-kiosk ]
+  - [ systemctl, daemon-reload ]
+  - [ systemctl, enable, --now, visitor-kiosk.service ]
+  - [ systemctl, enable, --now, kiosk-console.timer ]
+  - [ sh, -c, "sleep 5; /usr/local/sbin/kiosk-console" ]
+
+final_message: "Visitor Desk is ready after $UPTIME seconds."

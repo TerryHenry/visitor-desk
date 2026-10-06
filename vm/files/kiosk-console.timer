@@ -1,0 +1,9 @@
+[Unit]
+Description=Refresh the Visitor Desk console message
+
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=1min
+
+[Install]
+WantedBy=timers.target

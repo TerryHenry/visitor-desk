@@ -1,0 +1,10 @@
+[Unit]
+Description=Watch for Visitor Desk updates started from the admin panel
+
+[Path]
+PathExists=/opt/visitor-kiosk/data/updates/incoming.kup
+PathExists=/opt/visitor-kiosk/data/updates/rollback.request
+Unit=kiosk-web-update.service
+
+[Install]
+WantedBy=paths.target

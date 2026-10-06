@@ -1,0 +1,19 @@
+#!/bin/bash
+# Writes the text shown above the login prompt on the VM console: where to reach the kiosk, and the
+# first-time setup code until an admin user exists. \4 is replaced by this VM's IPv4 address.
+CODE_FILE=/opt/visitor-kiosk/setup-code.txt
+OUT=/etc/issue.d/visitor-kiosk.issue
+{
+  echo
+  echo "  Visitor Desk"
+  echo "    Kiosk and staff sign-in:  https://\\4/"
+  echo "    Tablet first-time setup:  http://\\4/setup"
+  if [ -s "$CODE_FILE" ]; then
+    echo "    Admin setup code:         $(tr -d '\n' < "$CODE_FILE")   (until the first admin user is created)"
+  fi
+  echo "    Console login: kioskadmin  (type 'kiosk' after signing in for maintenance commands)"
+  echo "    No IP address above? Log in and run:  kiosk network"
+  echo
+} > "$OUT.new"
+# Only when something changed: replace it and have the login prompts redraw it (agetty --reload).
+if ! cmp -s "$OUT.new" "$OUT"; then mv "$OUT.new" "$OUT"; agetty --reload 2>/dev/null || true; else rm -f "$OUT.new"; fi

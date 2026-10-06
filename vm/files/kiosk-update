@@ -1,0 +1,121 @@
+#!/bin/bash
+# Install a signed Visitor Desk update (.kup), or roll back the last one. Run as root (the `kiosk` helper uses sudo).
+#   kiosk-update <file or http(s) URL> [-y]      kiosk-update --rollback
+# The update must be signed with the key whose public half is /etc/visitor-kiosk/update-signing.pub.
+# Only the app and the VM's helper files change; config.json, data/, certs/, users and the shared look stay.
+set -euo pipefail
+APP=/opt/visitor-kiosk
+PREV=/opt/visitor-kiosk-previous
+PUB=/etc/visitor-kiosk/update-signing.pub
+NODE=/opt/node/bin/node
+APP_FILES=(server.js package.json README.md config.example.json public .version.json)
+SYS_FILES=(/usr/local/bin/kiosk /usr/local/sbin/kiosk-console /usr/local/sbin/kiosk-update /usr/local/sbin/kiosk-harden /usr/local/sbin/kiosk-web-update
+  /etc/systemd/system/kiosk-web-update.path /etc/systemd/system/kiosk-web-update.service
+  /etc/systemd/system/visitor-kiosk.service /etc/systemd/system/kiosk-console.service /etc/systemd/system/kiosk-console.timer
+  /etc/systemd/system/systemd-networkd-wait-online.service.d/10-visitor-kiosk.conf)
+
+say() { echo "$@"; }
+version_of() { [ -f "$1/.version.json" ] && "$NODE" -e 'const v=require(process.argv[1]); console.log(v.version + " (build " + v.build + ")")' "$1/.version.json" || echo "unknown"; }
+
+# Copy a tree onto / by writing each file next to its target and renaming it into place. A plain cp overwrites in
+# place, and bash reads a running script as it goes: replacing kiosk-update or kiosk while they run broke them (1.4.0).
+install_tree() {   # install_tree <source tree> [target root, default /]
+  local root=${2:-}
+  (cd "$1" && find . -type f) | while read -r f; do
+    f=${f#.}; mkdir -p "$root$(dirname "$f")"
+    cp -a "$1$f" "$root$f.kiosk-new" && mv -f "$root$f.kiosk-new" "$root$f"
+  done
+}
+
+healthy() {
+  for _ in $(seq 1 30); do curl -fs -m 2 http://127.0.0.1/health >/dev/null 2>&1 && return 0; sleep 1; done
+  return 1
+}
+
+backup() {
+  rm -rf "$PREV"; mkdir -p "$PREV/app" "$PREV/system"
+  for f in "${APP_FILES[@]}"; do [ -e "$APP/$f" ] && cp -a "$APP/$f" "$PREV/app/"; done
+  for f in "${SYS_FILES[@]}"; do [ -e "$f" ] && { mkdir -p "$PREV/system$(dirname "$f")"; cp -a "$f" "$PREV/system$f"; }; done
+  rm -rf "$PREV/node"; [ -n "${NEW_NODE:-}" ] && cp -a /opt/node "$PREV/node"   # only when the update changes Node.js
+  return 0
+}
+
+restore() {
+  [ -d "$PREV/app" ] || { say "There's no previous version to go back to."; exit 1; }
+  rm -rf "$APP/public"
+  cp -a "$PREV/app/." "$APP/"
+  [ -d "$PREV/system" ] && install_tree "$PREV/system" 2>/dev/null || true
+  if [ -d "$PREV/node" ]; then rm -rf /opt/node; cp -a "$PREV/node" /opt/node; fi
+  chown -R kiosk:kiosk "$APP"
+  systemctl daemon-reload
+  systemctl restart visitor-kiosk
+}
+
+if [ "${1:-}" = "--rollback" ]; then
+  say "Going back to $(version_of "$PREV/app")..."
+  restore
+  healthy && say "Done. The kiosk is running the previous version again." || { say "The kiosk didn't answer after going back. Check: kiosk logs"; exit 1; }
+  exit 0
+fi
+
+SRC=${1:?"Usage: kiosk update <file or URL> [-y]"}
+YES=${2:-}
+[ -f "$PUB" ] || { say "This VM has no update key ($PUB), so it can't check updates. Redeploy the latest OVA."; exit 1; }
+WORK=$(mktemp -d /var/tmp/kiosk-update.XXXXXX); trap 'rm -rf "$WORK"' EXIT
+
+if [[ "$SRC" =~ ^https?:// ]]; then
+  say "Downloading $SRC"
+  curl -fsSL --max-time 300 -o "$WORK/update.kup" "$SRC" || { say "Couldn't download the update."; exit 1; }
+else
+  [ -f "$SRC" ] || { say "No such file: $SRC"; exit 1; }
+  cp "$SRC" "$WORK/update.kup"
+fi
+
+# .kup = tar of update.tar.gz (the files) + update.sig (Ed25519 signature of update.tar.gz).
+tar -xf "$WORK/update.kup" -C "$WORK" update.tar.gz update.sig 2>/dev/null || { say "That isn't a kiosk update file."; exit 1; }
+"$NODE" -e '
+  const c = require("crypto"), fs = require("fs"), [data, pub, sig] = process.argv.slice(1).map(p => fs.readFileSync(p));
+  process.exit(c.verify(null, data, c.createPublicKey(pub), sig) ? 0 : 1)' "$WORK/update.tar.gz" "$PUB" "$WORK/update.sig" \
+  || { say "The update's signature doesn't match this VM's update key. Not installed."; exit 1; }
+
+mkdir "$WORK/p"; tar -xzf "$WORK/update.tar.gz" -C "$WORK/p" --no-same-owner
+[ -f "$WORK/p/app/server.js" ] && [ -f "$WORK/p/app/.version.json" ] || { say "The update is missing files. Not installed."; exit 1; }
+"$NODE" --check "$WORK/p/app/server.js" || { say "The update's server.js doesn't run. Not installed."; exit 1; }
+# A new Node.js runtime, if the update carries one: it must run, and must accept the new server.js.
+NEW_NODE=""
+if [ -x "$WORK/p/node/bin/node" ]; then
+  "$WORK/p/node/bin/node" --check "$WORK/p/app/server.js" || { say "The update's Node.js can't run the kiosk. Not installed."; exit 1; }
+  NEW_NODE=$("$WORK/p/node/bin/node" --version)
+fi
+
+say "Installed:  $(version_of "$APP")"
+say "Update:     $(version_of "$WORK/p/app")"
+[ -n "$NEW_NODE" ] && say "Node.js:    $(/opt/node/bin/node --version) -> $NEW_NODE"
+if [ "$YES" != "-y" ]; then read -rp "Install it? [y/N] " a; [[ "$a" =~ ^[Yy] ]] || { say "Not installed."; exit 0; }; fi
+
+backup
+rm -rf "$APP/public"
+for f in "${APP_FILES[@]}"; do [ -e "$WORK/p/app/$f" ] && cp -a "$WORK/p/app/$f" "$APP/"; done
+chown -R kiosk:kiosk "$APP"
+if [ -n "$NEW_NODE" ]; then
+  rm -rf /opt/node.new && cp -a "$WORK/p/node" /opt/node.new && chown -R root:root /opt/node.new
+  mv /opt/node /opt/node.old && mv /opt/node.new /opt/node && rm -rf /opt/node.old
+fi
+if [ -d "$WORK/p/system" ]; then
+  install_tree "$WORK/p/system"
+  chown root:root /usr/local/bin/kiosk /usr/local/sbin/kiosk-console /usr/local/sbin/kiosk-update /usr/local/sbin/kiosk-harden /usr/local/sbin/kiosk-web-update 2>/dev/null || true
+fi
+systemctl daemon-reload
+systemctl restart visitor-kiosk
+
+if healthy; then
+  sudo_user=${SUDO_USER:-root}
+  logger -t kiosk-update "Updated to $(version_of "$APP") by $sudo_user"
+  /usr/local/sbin/kiosk-console || true
+  say "Done. The kiosk is running $(version_of "$APP"). Undo with: kiosk rollback"
+else
+  say "The kiosk didn't start with the update. Going back to the previous version..."
+  restore
+  healthy && say "Back on $(version_of "$APP"). The update was not kept." || say "The kiosk still isn't answering. Check: kiosk logs"
+  exit 1
+fi
