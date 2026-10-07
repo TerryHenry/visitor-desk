@@ -45,7 +45,7 @@ the VM starts; the first boot works without internet (RUCKUS One still needs it)
 ## Download
 
 Get the latest `visitor-desk-<version>.ova` (new install) or the signed `.kup` update (existing VM) from
-[Releases](https://github.com/TerryHenry/visitor-desk/releases).
+[Releases](https://github.com/TerryHenry/visitor-desk-releases/releases).
 
 ## Security notes
 

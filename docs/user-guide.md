@@ -219,7 +219,7 @@ Updates replace only the app and the VM's helper files. Settings, users, visitor
 Updates are signed: the VM refuses any file that isn't signed with the Visitor Desk update key.
 
 **From the admin panel (VMs on 1.8.0 and later):** download the `.kup` file from the
-[Releases](https://github.com/TerryHenry/visitor-desk/releases) page, then **Admin → Updates → Choose update file**.
+[Releases](https://github.com/TerryHenry/visitor-desk-releases/releases) page, then **Admin → Updates → Choose update file**.
 Check the version shown and tap **Install now**. The server restarts (visitors can't check in for about a minute);
 sign in again to see the result and the log. If the new version doesn't start, the VM goes back to the old one by
 itself. **Go back to …** returns to the version before the last update.

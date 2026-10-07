@@ -396,6 +396,9 @@ API reference: https://docs.ruckus.cloud/api/
 
 
 ## Releases (GitHub, from 1.8.1)
+- Code: private repo TerryHenry/visitor-desk. Downloads: public repo TerryHenry/visitor-desk-releases (README, docs/,
+  releases only; no code), created 2026-10-07 at the user's request (a release can't be public in a private repo). The
+  docs link to the public releases. Publish each release in both; copy README (minus "Building it yourself") and docs.
 - Private repo on GitHub (owner in CLAUDE.local.md). Tag `v<version>`; assets: `visitor-desk-<version>.ova`, the signed
   `visitor-desk-update-<version>-*.kup`, and `SHA256SUMS`. Built from a clean commit (`git status` empty) with
   `vm/build-ova.sh` and `vm/build-update.sh` (needs the gitignored vm/keys/update-signing.key and vm/cache).

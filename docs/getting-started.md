@@ -13,7 +13,7 @@ From download to the first visitor checked in, in about 30 minutes.
 
 ## 1. Download
 
-From the [Releases](https://github.com/TerryHenry/visitor-desk/releases) page, download:
+From the [Releases](https://github.com/TerryHenry/visitor-desk-releases/releases) page, download:
 
 - `visitor-desk-<version>.ova`: the virtual machine, for a new install.
 - `visitor-desk-update-<version>-<build>.kup`: the signed update, for a VM you already have.
