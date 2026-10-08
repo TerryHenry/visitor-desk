@@ -236,6 +236,11 @@ button.danger.small svg{fill:none;stroke:currentColor}
 .fgroup{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:.7rem 1rem;margin-bottom:.5rem;cursor:pointer}
 .fgroup.hl{border-color:var(--brand)}
 .fgroup b{display:block}.fgroup span{display:block;font-size:.875rem;color:var(--muted)}
+/* blocked visitors */
+.brow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.5rem 1.25rem;align-items:center;background:var(--surface);
+  border:1px solid var(--line);border-radius:12px;padding:.8rem 1rem;margin-bottom:.5rem}
+.bmain b{font-size:1.0625rem}.bmeta{font-size:.875rem;color:var(--muted);margin-top:.15rem;overflow-wrap:anywhere}
+.breason{margin-top:.3rem;font-size:.9375rem;overflow-wrap:anywhere}.breason::before{content:"Reason: ";color:var(--muted)}
 /* expected visitors */
 .irow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:.5rem 1.25rem;align-items:center;background:var(--surface);
   border:1px solid var(--line);border-radius:12px;padding:.8rem 1rem;margin-bottom:.5rem}
@@ -3136,9 +3141,13 @@ $("#vBlocks").onclick = async ()=>{
   enterView("#vBlocks");
   const draw = l => {
     $("#visitsInfo").textContent = l.length ? `${l.length} blocked. They can't check in until unblocked.` : "";
-    $("#vList").innerHTML = l.length ? l.map(b=>`<div class="vrow" style="cursor:default"><span class="vmain"><b>${esc(b.displayName || b.name)}</b>
-      <small>${esc([b.email, b.phone && "phone ending " + b.phone.slice(-4), b.reason && "Reason: " + b.reason, "by " + b.by + ", " + fmtTime(b.at)].filter(Boolean).join(" · "))}</small></span>
-      <button class="ghost" data-unblock="${esc(b.id)}" style="min-height:2.5rem">Unblock</button></div>`).join("") : `<p class="hint">Nobody is blocked.</p>`;
+    $("#vList").innerHTML = l.length ? l.map(b=>{
+      const match = [b.email, b.phone && "phone ending " + b.phone.slice(-4)].filter(Boolean).join(" · ");
+      return `<div class="brow"><div class="bmain"><b>${esc(b.displayName || b.name)}</b>
+        ${match ? `<div class="bmeta">${esc(match)}</div>` : ""}
+        ${b.reason ? `<div class="breason">${esc(b.reason)}</div>` : ""}
+        <div class="bmeta">Blocked by ${esc(b.by)}, ${esc(fmtTime(b.at))}</div></div>
+        <button class="ghost small" data-unblock="${esc(b.id)}">Unblock</button></div>`; }).join("") : `<p class="hint">Nobody is blocked.</p>`;
     $("#vList").querySelectorAll("[data-unblock]").forEach(btn=>btn.onclick = async ()=>{
       try{ draw(await r1Api("DELETE", `/blocks/${btn.dataset.unblock}`)); }catch(err){ $("#vErr").textContent = err.message; }
     });
