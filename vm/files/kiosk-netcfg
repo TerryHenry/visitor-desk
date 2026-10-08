@@ -152,9 +152,9 @@ async function web() {
   writeState();
   const c = await checks(s);
   if (!confirm) { status({ state: "done", from: before, to: s, checks: c, by: req.by }); sh("/usr/local/sbin/kiosk-console", []); return; }
+  restartKiosk();   // new HTTPS certificate for the new address (before "waiting", so the panel never sees it go away)
   const deadline = Date.now() + CONFIRM_SECONDS * 1000;
   status({ state: "waiting", from: before, to: s, checks: c, deadline: new Date(deadline).toISOString(), by: req.by });
-  restartKiosk();   // new HTTPS certificate for the new address
   while (Date.now() < deadline) {
     await sleep(1000);
     if (fs.existsSync(path.join(DIR, "network.confirm"))) {
@@ -167,9 +167,9 @@ async function web() {
   fs.rmSync(path.join(DIR, "network.revert"), { force: true });
   restore(snap); try { activate(); } catch {}
   await sleep(4000);
+  writeState(); restartKiosk();   // the previous address: restart first, then say so
   status({ state: "reverted", from: before, to: s, checks: c, by: req.by,
     message: asked ? "Went back to the previous settings, as asked." : "Nobody confirmed the new settings within 3 minutes, so the previous ones are back." });
-  writeState(); restartKiosk();
 }
 function cli(args) {
   const cur = configured(), next = { ...cur };
@@ -180,8 +180,9 @@ function cli(args) {
   }
   if (next.mode === "dhcp") { delete next.address; delete next.prefix; delete next.gateway; }
   const s = validate(next);
-  apply(s); writeState(); status({ state: "done", from: cur, to: s, by: "console" });
+  apply(s); writeState();
   if (risky(cur, s)) restartKiosk(); else sh("/usr/local/sbin/kiosk-console", []);
+  status({ state: "done", from: cur, to: s, by: "console" });
   return s;
 }
 

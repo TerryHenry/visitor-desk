@@ -68,6 +68,13 @@ test("upload, check, install: hands the file to the VM's installer", async () =>
   assert.equal((await s.api("POST", "/api/admin/update/install", {}, admin)).status, 400, "nothing staged any more");
 });
 
+test("the running version is reported, not the files an update has just copied in", async () => {
+  const before = (await s.api("GET", "/api/admin/update", undefined, admin)).body.current.version;
+  fs.writeFileSync(s.file(".version.json"), JSON.stringify({ version: "9.9.9", build: "copied-in" }));
+  try { assert.equal((await s.api("GET", "/api/admin/update", undefined, admin)).body.current.version, before); }
+  finally { fs.rmSync(s.file(".version.json"), { force: true }); }
+});
+
 test("going back needs an earlier version", async () => {
   assert.equal((await s.api("POST", "/api/admin/update/rollback", {}, admin)).status, 400);
 });

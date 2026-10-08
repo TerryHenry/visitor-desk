@@ -2767,8 +2767,11 @@ function readRaw(req, limit) {
     req.on("end", () => resolve(Buffer.concat(chunks))); req.on("error", reject);
   });
 }
+// The version this process runs: read once at start. During an update the new files are copied in before the restart,
+// so reading .version.json later would report the new version while the old one still runs.
+const RUNNING = readJson(path.join(ROOT, ".version.json")) || { version: require(path.join(ROOT, "package.json")).version, build: "" };
 function updateInfo() {
-  const cur = readJson(path.join(ROOT, ".version.json")) || { version: require(path.join(ROOT, "package.json")).version, build: "" };
+  const cur = RUNNING;
   let log = ""; try { log = fs.readFileSync(path.join(UPDATE_DIR, "last.log"), "utf8").trim().split("\n").slice(-40).join("\n"); } catch {}
   return { available: updatesOn(), current: cur, node: process.version,
     previous: readJson("/opt/visitor-kiosk-previous/app/.version.json"),
