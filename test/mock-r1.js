@@ -49,6 +49,8 @@ globalThis.fetch = async (url, opts = {}) => {
   if (gu && m === "POST") return json({ response: { id: "g" + ++guestN, password: "123456", ssid: "Acme-Guest" } }, 201);
   if (gu && m === "GET") return json({ response: { id: gu[2], ssid: "Acme-Guest", expirationDate: Date.now() + 8 * 3600e3, macAddresses: st.guestMacs || [] } });
   if (gu && m === "DELETE") return json({ requestId: "rd" });
+  // "Patch AP Client": disconnect a client from the AP it's on (the call Visitor Desk makes when access ends).
+  if (m === "PATCH" && /^\/venues\/\w+\/aps\/\w+\/clients\/[^/]+$/.test(p)) return JSON.parse(body || "{}").status === "DISCONNECTED" ? json({ requestId: "kick" }, 202) : json({ message: "bad status" }, 400);
   if (p === "/venues/aps/clients/query") { const c = st.clients || []; return json({ data: c, totalCount: c.length, page: 1 }); }
   if (p === "/venues/aps/query") return json({ data: [
     { name: "Lobby AP", apMac: "11:11:11:00:00:02", serialNumber: "S2", venueName: "HQ", venueId: "v1", floorPosition: { floorplanId: "fp1", xPercent: 55, yPercent: 40 } },

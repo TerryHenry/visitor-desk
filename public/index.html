@@ -336,6 +336,19 @@ dd{margin:0;font-weight:600;word-break:break-all}
 .tools .langs button{padding:0 .75rem}
 .tools .langs button.on{background:var(--brand);color:var(--brand-ink);border-color:var(--brand)}
 .notice{background:var(--tint);border-radius:10px;padding:.7rem .9rem;margin:0 0 1rem}
+#osk{position:fixed;left:0;right:0;bottom:0;z-index:1000;background:var(--surface);border-top:1px solid var(--line);box-shadow:0 -6px 24px rgba(0,0,0,.18);
+  padding:.5rem max(.5rem,env(safe-area-inset-left)) calc(.5rem + env(safe-area-inset-bottom)) max(.5rem,env(safe-area-inset-right));touch-action:manipulation;user-select:none;-webkit-user-select:none}
+#osk[hidden]{display:none}
+#osk .osk-row,#osk .osk-picks{display:flex;gap:.4rem;max-width:1100px;margin:0 auto .4rem}
+#osk.osk-tel .osk-row,#osk.osk-numeric .osk-row,#osk.osk-decimal .osk-row{max-width:420px}
+#osk .osk-k{flex:1 1 0;min-width:0;min-height:3.4rem;padding:0;border:1px solid var(--line);border-radius:10px;background:var(--field);color:var(--ink);font:500 1.35rem/1 "Instrument Sans",system-ui,sans-serif;text-transform:none}
+#osk .osk-k:active{background:var(--tint)}
+#osk .osk-a{font-size:1rem;font-weight:600;background:var(--tint)}
+#osk .osk-a.on{background:var(--brand);color:var(--brand-ink)}#osk .osk-a.lock{text-decoration:underline}
+#osk .osk-done{background:var(--brand);color:var(--brand-ink)}
+#osk .osk-picks{flex-wrap:wrap}
+#osk .osk-pick{min-height:2.75rem;padding:0 1rem;border:1px solid var(--line);border-radius:999px;background:var(--tint);color:var(--ink);font:600 1rem/1 "Instrument Sans",system-ui,sans-serif}
+body.osk-open{padding-bottom:var(--osk-h,0)}
 .netnow{display:grid;grid-template-columns:max-content 1fr;gap:.35rem 1rem;margin:0 0 .5rem;font-size:.9375rem}.netnow dt{color:var(--muted)}.netnow dd{margin:0;overflow-wrap:anywhere}
 .netchecks{list-style:none;padding:0;margin:.5rem 0 0}.netok{color:var(--ok);font-weight:700}.netno{color:var(--error);font-weight:700}
 .capture.reuse > span:not(.reuse-txt),.capture.reuse > small{display:none}
@@ -582,7 +595,7 @@ const DEFAULTS = {
   consent: { enabled:true, retentionDays:30,
     text:"I agree that my details, any photos, and which Wi-Fi access points my devices connect to are stored for building security and deleted after {days} days." },
   delivery: { print:true, email:false, sms:false, notifyHost:false, badgeSize:"page" },
-  kiosk: { resetSeconds:90, backendUrl: window.KIOSK_BACKEND || "", pin:"kioskadmin" }   // pin: demo-mode password only
+  kiosk: { resetSeconds:90, backendUrl: window.KIOSK_BACKEND || "", pin:"kioskadmin", keyboard:"auto" }   // pin: demo-mode password only
 };
 
 const FIELDS = [
@@ -614,7 +627,7 @@ const I18N = {
     hVisit:"Who are you here to see?", ledeVisitNotify:"We'll let them know you've arrived.", ledeVisit:"This goes on your visitor record.",
     hId:"Photo and ID", ledeId:"Your photo goes on your badge. Your ID is checked by reception and isn't printed.",
     f_name:"Full name", f_email:"Email", f_phone:"Phone", f_company:"Company", f_host:"Person you're visiting", f_purpose:"Reason for visit",
-    optional:"(optional)", choosePerson:"Choose a person", chooseReason:"Choose a reason", onFile:"On file. Type to change it.",
+    optional:"(optional)", kbDone:"Done", kbSpace:"space", kbDelete:"Delete", kbShift:"Shift", choosePerson:"Choose a person", chooseReason:"Choose a reason", onFile:"On file. Type to change it.",
     capFace:"Take your photo", capFaceSub:"Look at the camera", capId:"Scan your driver's license", capIdSub:"Front side, flat and in focus",
     capReuse:"Using your photo from last time", capReuseSub:"Tap to take a new one", retake:"Retake",
     consent:"I agree that my details, any photos, and which Wi-Fi access points my devices connect to are stored for building security and deleted after {days} days.",
@@ -659,7 +672,7 @@ const I18N = {
     hVisit:"¿A quién viene a ver?", ledeVisitNotify:"Le avisaremos que usted ha llegado.", ledeVisit:"Esto se guarda en su registro de visita.",
     hId:"Foto e identificación", ledeId:"Su foto aparece en su gafete. Recepción revisa su identificación y no se imprime.",
     f_name:"Nombre completo", f_email:"Correo electrónico", f_phone:"Teléfono", f_company:"Empresa", f_host:"Persona a quien visita", f_purpose:"Motivo de la visita",
-    optional:"(opcional)", choosePerson:"Elija una persona", chooseReason:"Elija un motivo", onFile:"Guardado. Escriba para cambiarlo.",
+    optional:"(opcional)", kbDone:"Listo", kbSpace:"espacio", kbDelete:"Borrar", kbShift:"Mayúsculas", choosePerson:"Elija una persona", chooseReason:"Elija un motivo", onFile:"Guardado. Escriba para cambiarlo.",
     capFace:"Tómese una foto", capFaceSub:"Mire a la cámara", capId:"Escanee su licencia de conducir", capIdSub:"Lado frontal, plano y enfocado",
     capReuse:"Usando su foto de la última vez", capReuseSub:"Toque para tomar una nueva", retake:"Repetir",
     consent:"Acepto que mis datos, mis fotos y los puntos de acceso Wi-Fi a los que se conectan mis dispositivos se guarden por seguridad del edificio y se borren después de {days} días.",
@@ -704,7 +717,7 @@ const I18N = {
     hVisit:"Qui venez-vous voir ?", ledeVisitNotify:"Nous la préviendrons de votre arrivée.", ledeVisit:"Cela figure dans votre fiche de visite.",
     hId:"Photo et pièce d'identité", ledeId:"Votre photo figure sur votre badge. L'accueil vérifie votre pièce d'identité, qui n'est pas imprimée.",
     f_name:"Nom complet", f_email:"E-mail", f_phone:"Téléphone", f_company:"Entreprise", f_host:"Personne que vous visitez", f_purpose:"Motif de la visite",
-    optional:"(facultatif)", choosePerson:"Choisissez une personne", chooseReason:"Choisissez un motif", onFile:"Enregistré. Tapez pour le modifier.",
+    optional:"(facultatif)", kbDone:"OK", kbSpace:"espace", kbDelete:"Effacer", kbShift:"Majuscules", choosePerson:"Choisissez une personne", chooseReason:"Choisissez un motif", onFile:"Enregistré. Tapez pour le modifier.",
     capFace:"Prenez votre photo", capFaceSub:"Regardez la caméra", capId:"Scannez votre permis de conduire", capIdSub:"Recto, à plat et net",
     capReuse:"Votre photo de la dernière fois", capReuseSub:"Touchez pour en prendre une nouvelle", retake:"Reprendre",
     consent:"J'accepte que mes informations, mes photos et les points d'accès Wi-Fi auxquels mes appareils se connectent soient conservés pour la sécurité du bâtiment et supprimés après {days} jours.",
@@ -878,13 +891,13 @@ function fieldHTML(f){
     if (S.hostMode==="list"){
       return `<div class="field"><label for="${id}">${label}${opt}</label><select id="${id}"><option value="">${T("choosePerson")}</option>${S.hosts.map(h=>`<option>${esc(h)}</option>`).join("")}</select><div class="err"></div></div>`;
     }
-    return `<div class="field"><label for="${id}">${label}${opt}</label><input id="${id}" type="text" list="hostlist" autocomplete="off"><datalist id="hostlist">${S.hosts.map(h=>`<option value="${esc(h)}">`).join("")}</datalist><div class="err"></div></div>`;
+    return `<div class="field"><label for="${id}">${label}${opt}</label><input id="${id}" type="text" list="hostlist" autocomplete="off" autocapitalize="words"><datalist id="hostlist">${S.hosts.map(h=>`<option value="${esc(h)}">`).join("")}</datalist><div class="err"></div></div>`;
   }
   if (f.type==="purpose"){
     return `<div class="field"><label for="${id}">${label}${opt}</label><select id="${id}">${req(f.key)?"":`<option value="">${T("chooseReason")}</option>`}${S.reasons.map(r=>`<option value="${esc(r)}">${esc(reasonT(r))}</option>`).join("")}</select><div class="err"></div></div>`;
   }
-  const mode = {email:"email",tel:"tel"}[f.type] || "text";
-  return `<div class="field"><label for="${id}">${label}${opt}</label><input id="${id}" type="${f.type}" inputmode="${mode}" autocomplete="${f.ac||"off"}"><div class="err"></div></div>`;
+  const mode = {email:"email",tel:"tel"}[f.type] || "text", caps = ["name","company"].includes(f.key) ? ` autocapitalize="words"` : "";
+  return `<div class="field"><label for="${id}">${label}${opt}</label><input id="${id}" type="${f.type}" inputmode="${mode}" autocomplete="${f.ac||"off"}"${caps}><div class="err"></div></div>`;
 }
 function captureHTML(f){
   const opt = req(f.key) ? "" : `<small>${T("optional")}</small>`;
@@ -1639,6 +1652,8 @@ function renderAdmin(d){
       <div class="field"><label>Welcome headline</label><input type="text" data-k="headline" value="${esc(d.headline)}">
         ${d.kiosk.backendUrl ? `<p class="hint">With "Use this look on every kiosk" on (under Look), the location name and headline are shared too.</p>` : ""}</div>
       <div class="field"><label>Clear the pass screen after (seconds)</label><input type="number" min="15" max="900" data-k="kiosk.resetSeconds" value="${d.kiosk.resetSeconds}"></div>
+      <div class="field"><label>On-screen keyboard</label>${sel("kiosk.keyboard",[["auto","Automatic"],["on","Always show"],["off","Never show"]],d.kiosk.keyboard||"auto")}
+        <p class="hint">For touch screens that don't show their own keyboard, such as a touch-screen PC. <b>Automatic</b> shows it on touch screens except iPads, Android tablets and phones, which have their own. Saved on this device. This device: ${(()=>{ const e = kbEnv(); return e.mobileOS ? "a tablet or phone with its own keyboard" : e.touch ? "a touch screen" : "no touch screen"; })()}.</p></div>
       <div class="field"><label>Pass service URL</label><input type="text" data-k="kiosk.backendUrl" value="${esc(d.kiosk.backendUrl)}" placeholder="Leave empty for demo mode"><p class="hint">Filled in automatically when the kiosk is opened from your kiosk server. Empty means demo mode.</p></div>
       ${d.kiosk.backendUrl ? "" : `<div class="field"><label>Admin password (this device only)</label><input type="password" data-k="kiosk.pin" autocomplete="new-password" value="${esc(String(d.kiosk.pin||"").length>=8 ? d.kiosk.pin : DEMO_DEFAULT_PW)}"><p class="hint">8 to 20 characters.</p></div>`}
     </section>
@@ -2659,8 +2674,9 @@ const HELP = [
     <p><b>Many at once:</b> <b>Import from CSV</b>. Use <b>Download a template</b> for the columns (Name, Email, Phone, Company, Visiting, Reason, Date, Last day, Note). Only Name is needed; no date means today. You'll see a preview with any problems before anything is added.</p>` },
   { id:"visit", title:"A visit: details, Wi-Fi, blocking", who:"all", body:`
     <p>Tap a visit in <b>Visitor records</b> to see their details, photo, license scan, signature and devices.</p>
-    <ul><li><b>End Wi-Fi access</b>: their guest pass or personal password stops working now. (A shared password can't be ended for one person.)</li>
-      <li><b>Block this visitor</b>: they can't check in again with the same name, email or phone. Staff are alerted if they try. Unblock them under the <b>Blocked</b> tab.</li>
+    <ul><li><b>End Wi-Fi access</b>: their guest pass or personal password is deleted in RUCKUS One, and their devices that are still on the Wi-Fi are disconnected, so they can't get back on. (A shared password can't be ended for one person.)</li>
+      <li><b>Block this visitor</b>: they can't check in again with the same name, email or phone, and (ticked by default) their Wi-Fi access ends as above. Staff are alerted if they try. Unblock them under the <b>Blocked</b> tab. The block list is Visitor Desk's own: RUCKUS One doesn't show these people as blocked.</li>
+      <li><b>Disconnect their devices</b> (after access has ended): disconnects their devices again, for example a phone that was still connected.</li>
       <li>Admins can also <b>Print badge</b>, <b>Email/Text Wi-Fi details</b> again, and <b>Delete this visit</b>.</li></ul>` },
   { id:"reports", title:"Reports (CSV and PDF)", who:"all", body:`
     <p>In <b>Visitor records</b>, pick what you want (search, <b>24 hours</b> / <b>7 days</b> / <b>30 days</b>, dates, or <b>On site now</b>), then <b>Export CSV</b> for a spreadsheet or <b>Export PDF</b> for a printable report. Times are in this device's time zone. Exports are recorded in the audit log.</p>` },
@@ -2700,7 +2716,8 @@ const HELP = [
     <ul><li><b>What visitors fill in</b>: each item Required, Optional or Hidden, including photo, license scan and <b>signature</b>.</li>
       <li><b>Kiosk buttons and languages</b>: Leaving? Check out, I have an invite code, Been here before?, and Spanish/French. Text you've changed (headline, agreement, reasons) shows as you typed it.</li>
       <li><b>After check-in</b>: print badge (full page or label printer size), email/text the visitor, tell the host.</li>
-      <li><b>Look</b>: colors, logo, background. "Use this look on every kiosk" shares it with all tablets.</li></ul>` },
+      <li><b>Look</b>: colors, logo, background. "Use this look on every kiosk" shares it with all tablets.</li>
+      <li><b>On-screen keyboard</b> (under Location and screen): for touch screens that don't show their own keyboard, such as a touch-screen PC. <b>Automatic</b> shows it on touch screens except iPads, Android tablets and phones, which have their own. Set on each device.</li></ul>` },
   { id:"hostlinks", title:"Host links and \u201cOn my way\u201d", who:"admin", body:`
     <p>Under <b>Host links</b>, send each person in the host list their personal link (by email, or text if there's no email). It opens a page where they:</p>
     <ul><li>Add their own expected visitors (with dates, and the code emailed or texted to the visitor).</li>
@@ -3023,10 +3040,12 @@ async function toggleVisit(btn){
     ${r.status === "blocked" ? `<p class="warn">This person is on the blocked list. They tried to check in and weren't given Wi-Fi.</p>` : ""}
     ${(r.resent||[]).map(x=>`<p class="help">Wi-Fi details ${x.channel === "email" ? "emailed" : "texted"} to ${esc(x.to)} ${esc(fmtTime(x.at))} by ${esc(x.by)}.</p>`).join("")}
     ${r.revokedAt ? `<p class="help">Wi-Fi access ended ${esc(fmtTime(r.revokedAt))} by ${esc(r.revokedBy||"")}.</p>` : ""}
+    ${r.lastDisconnect ? `<p class="${r.lastDisconnect.failed ? "warn" : "help"}">${r.lastDisconnect.disconnected ? `${r.lastDisconnect.disconnected} device${r.lastDisconnect.disconnected === 1 ? "" : "s"} disconnected from the Wi-Fi` : "No devices were connected"} ${esc(fmtTime(r.lastDisconnect.at))}.${r.lastDisconnect.failed ? ` ${r.lastDisconnect.failed} couldn't be disconnected (see Recent problems); without the pass they can't connect again once they leave the Wi-Fi.` : ""}</p>` : ""}
     ${r.blockedAt ? `<p class="help">Blocked ${esc(fmtTime(r.blockedAt))} by ${esc(r.blockedBy||"")}.${r.unblockedAt ? ` Unblocked ${esc(fmtTime(r.unblockedAt))} by ${esc(r.unblockedBy||"")}.` : ""}</p>` : ""}
     <div class="actions" style="margin-top:.5rem">
       ${!r.checkedOutAt && r.status !== "blocked" && onSite(r) ? `<button class="ghost" data-checkout>Check out</button>` : ""}
       ${r.ruckusId && !r.revokedAt && r.status !== "blocked" ? `<button class="ghost" data-revoke>End Wi-Fi access</button>` : ""}
+      ${r.ruckusId && r.revokedAt ? `<button class="ghost" data-kick>Disconnect their devices</button>` : ""}
       ${(!r.blockedAt || r.unblockedAt) && r.status !== "blocked" ? `<button class="ghost" data-block>Block this visitor</button>` : ""}
       ${R1UI.role === "admin" && r.status !== "blocked" && !r.revokedAt && !r.checkedOutAt ? `<button class="ghost" data-print>Print badge</button>
         ${r.email ? `<button class="ghost" data-resend="email">Email Wi-Fi details</button>` : ""}${r.phone ? `<button class="ghost" data-resend="sms">Text Wi-Fi details</button>` : ""}` : ""}
@@ -3053,6 +3072,9 @@ async function toggleVisit(btn){
   box.querySelector("[data-checkout]")?.addEventListener("click", async ()=>{
     if (!confirm(`Check ${r.name} out now?${r.ruckusId && !r.revokedAt && R1UI.cfg?.checkout?.endAccess !== false ? " Their Wi-Fi access ends too." : ""}`)) return;
     try{ const out = await r1Api("POST", `/visits/${encodeURIComponent(id)}/checkout`); updated(out.record); }catch(err){ msg(err.message); }
+  });
+  box.querySelector("[data-kick]")?.addEventListener("click", async ()=>{
+    try{ const out = await r1Api("POST", `/visits/${encodeURIComponent(id)}/revoke`); updated(out.record); }catch(err){ msg(err.message); }
   });
   box.querySelector("[data-revoke]")?.addEventListener("click", async ()=>{
     if (!confirm(`End ${r.name}'s Wi-Fi access now? Their ${r.mode==="dpsk"?"password":"guest pass"} stops working.`)) return;
@@ -3433,6 +3455,139 @@ function readAdmin(base){
   if (langs.length) s.options.languages = ["en", ...langs.filter(x=>x.checked).map(x=>x.dataset.langopt)];
   return s;
 }
+
+/* ================= On-screen keyboard =================
+   For touch screens that don't bring up their own keyboard (a Windows or Linux touch PC in a kiosk browser).
+   iPads, Android tablets and phones have their own, so "auto" leaves them alone. S.kiosk.keyboard: auto | on | off.
+   Every text field on the page gets it, the staff sign-in too. */
+const KB_SKIP = ["checkbox","radio","range","color","file","date","time","datetime-local","month","week","button","submit","reset","hidden","image"];
+function kbWanted(setting, env){
+  if (setting === "on") return true;
+  if (setting === "off") return false;
+  return !!env.touch && !env.mobileOS;
+}
+function kbEnv(){
+  const ua = navigator.userAgent, tp = navigator.maxTouchPoints || 0;
+  return { touch: tp > 0 || matchMedia("(any-pointer: coarse)").matches,
+    mobileOS: /Android|iPhone|iPad|iPod/i.test(ua) || (/Macintosh/.test(ua) && tp > 1) };   // iPadOS says "Macintosh"
+}
+// Which keys a field needs: text, email, tel, numeric or decimal (null: not a typing field).
+function kbKind(el){
+  if (!el || el.readOnly || el.disabled) return null;
+  if (el.tagName === "TEXTAREA") return "text";
+  if (el.tagName !== "INPUT" || KB_SKIP.includes(el.type)) return null;
+  const m = el.dataset.kbMode ?? el.getAttribute("inputmode") ?? "";
+  if (el.type === "tel" || m === "tel") return "tel";
+  if (el.type === "number" || m === "numeric") return "numeric";
+  if (m === "decimal") return "decimal";
+  if (el.type === "email" || m === "email") return "email";
+  return "text";
+}
+// Rows of keys for a kind and layer (abc | sym | acc). A key is a character, or [action, label, width].
+function kbRows(kind, layer){
+  const done = ["done", "", 2], back = ["back", "⌫", 1.5], space = ["space", "", 5];
+  if (kind === "tel") return [["1","2","3"],["4","5","6"],["7","8","9"],["+","0",back],["-",["space", "", 1],done]];
+  if (kind === "numeric") return [["1","2","3"],["4","5","6"],["7","8","9"],[back,"0",done]];
+  if (kind === "decimal") return [["1","2","3"],["4","5","6"],["7","8","9"],[".","0",back],[done]];
+  if (layer === "sym") return [[..."1234567890"], [..."-/:;()&@'\""], [..."._,?!#%+=", back],
+    [["abc", "ABC", 2], kind === "email" ? "@" : space, done]];
+  const bottom = kind === "email" ? [["sym", "?123", 1.5], "@", ".", [".com", ".com", 1.5], "-", "_", done]
+    : [["sym", "?123", 1.5], ["acc", "àé", 1.5], space, "-", "'", done];
+  if (layer === "acc") return [[..."áéíóúýñü"], [..."àèìòùâêîôû"], [["shift", "⇧", 1.5], ..."çëïœæß", back], [["abc", "ABC", 2], space, done]];
+  return [[..."qwertyuiop"], [..."asdfghjkl"], [["shift", "⇧", 1.5], ..."zxcvbnm", back], bottom];
+}
+const KB = { el: null, kind: null, layer: "abc", shift: false, lock: false, lastShift: 0, box: null, repeat: null };
+function kbBox(){
+  if (KB.box) return KB.box;
+  const b = document.createElement("div");
+  b.id = "osk"; b.setAttribute("role", "group"); b.setAttribute("aria-label", "On-screen keyboard"); b.hidden = true;
+  document.body.appendChild(b);
+  const stop = () => { clearTimeout(KB.repeat); clearInterval(KB.repeat); KB.repeat = null; };
+  b.addEventListener("pointerdown", e => {
+    e.preventDefault();                       // keeps the field focused
+    const k = e.target.closest("[data-key],[data-act],[data-pick]"); if (!k || !KB.el) return;
+    if (k.dataset.pick != null){ kbSet(KB.el, k.dataset.pick); kbDraw(); return; }
+    if (k.dataset.act === "back"){ kbBack(KB.el); KB.repeat = setTimeout(() => { KB.repeat = setInterval(() => kbBack(KB.el), 70); }, 450); return; }
+    kbPress(k.dataset.act ? { act: k.dataset.act } : { key: k.dataset.key });
+  });
+  ["pointerup","pointerleave","pointercancel"].forEach(t => b.addEventListener(t, stop));
+  return KB.box = b;
+}
+function kbInsert(el, text){
+  let s = null, e = null; try { s = el.selectionStart; e = el.selectionEnd; } catch {}
+  const len = el.value.length - (s == null ? 0 : e - s) + text.length;
+  if (el.maxLength > 0 && len > el.maxLength) return;
+  if (s == null) el.value += text; else el.setRangeText(text, s, e, "end");
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+}
+function kbBack(el){
+  let s = null, e = null; try { s = el.selectionStart; e = el.selectionEnd; } catch {}
+  if (s == null) el.value = el.value.slice(0, -1);
+  else if (s !== e) el.setRangeText("", s, e, "end");
+  else if (s > 0) el.setRangeText("", s - 1, s, "end");
+  else return;
+  el.dispatchEvent(new Event("input", { bubbles: true })); kbAutoShift(); kbDraw();
+}
+function kbSet(el, v){ el.value = v; el.dispatchEvent(new Event("input", { bubbles: true })); el.dispatchEvent(new Event("change", { bubbles: true })); }
+// Names and companies start each word with a capital, like a phone keyboard.
+function kbAutoShift(){
+  const el = KB.el; if (!el || KB.lock) return;
+  if (el.getAttribute("autocapitalize") !== "words"){ return; }
+  let s = el.value.length; try { if (el.selectionStart != null) s = el.selectionStart; } catch {}
+  KB.shift = s === 0 || /[\s\-']$/.test(el.value.slice(0, s));
+}
+function kbPress({ key, act }){
+  const el = KB.el;
+  if (act === "shift"){ const now = Date.now(); KB.lock = !KB.shift ? false : now - KB.lastShift < 400; KB.shift = KB.lock || !KB.shift; KB.lastShift = now; return kbDraw(); }
+  if (["sym","acc","abc"].includes(act)){ KB.layer = act; return kbDraw(); }
+  if (act === "done"){ el.blur(); return; }
+  if (act === "space") key = " ";
+  if (act === ".com") key = ".com";
+  if (key == null) return;
+  kbInsert(el, KB.shift && key.length === 1 ? key.toUpperCase() : key);
+  if (KB.shift && !KB.lock){ KB.shift = false; }
+  kbAutoShift(); kbDraw();
+}
+function kbDraw(){
+  const b = kbBox(), el = KB.el; if (!el) return;
+  const label = { done: T("kbDone"), space: T("kbSpace") }, aria = { back: T("kbDelete"), shift: T("kbShift") };
+  const keyHTML = k => {
+    if (typeof k === "string"){ const c = KB.shift ? k.toUpperCase() : k; return `<button type="button" class="osk-k" data-key="${esc(k)}" tabindex="-1">${esc(c)}</button>`; }
+    const [act, text, w] = k, on = act === "shift" && KB.shift;
+    return `<button type="button" class="osk-k osk-a${act === "done" ? " osk-done" : ""}${on ? " on" : ""}${on && KB.lock ? " lock" : ""}" data-act="${act}" tabindex="-1" style="flex-grow:${w}"${aria[act] ? ` aria-label="${esc(aria[act])}"` : ""}>${esc(label[act] ?? text)}</button>`;
+  };
+  // Suggestions for fields with a list (the host type-ahead): shown here, since a browser's own list may not open.
+  let picks = [];
+  if (el.list && el.value.trim().length >= 1){
+    const q = el.value.trim().toLowerCase();
+    picks = [...el.list.options].map(o => o.value).filter(v => v.toLowerCase().includes(q) && v.toLowerCase() !== q).slice(0, 5);
+  }
+  b.className = "osk-" + KB.kind;
+  b.innerHTML = `${picks.length ? `<div class="osk-picks">${picks.map(p => `<button type="button" class="osk-pick" data-pick="${esc(p)}" tabindex="-1">${esc(p)}</button>`).join("")}</div>` : ""}
+    ${kbRows(KB.kind, KB.layer).map(r => `<div class="osk-row">${r.map(keyHTML).join("")}</div>`).join("")}`;
+  if (!b.hidden) document.documentElement.style.setProperty("--osk-h", b.offsetHeight + "px");
+}
+function kbShow(el){
+  const kind = kbKind(el); if (!kind) return;
+  if (el.dataset.kbMode == null) el.dataset.kbMode = el.getAttribute("inputmode") ?? "";
+  el.setAttribute("inputmode", "none");       // so a device's own keyboard doesn't come up as well
+  if (KB.el !== el){ KB.layer = "abc"; KB.lock = false; KB.shift = false; }
+  KB.el = el; KB.kind = kind; kbAutoShift(); kbDraw();
+  const b = kbBox(); b.hidden = false; document.body.classList.add("osk-open");
+  document.documentElement.style.setProperty("--osk-h", b.offsetHeight + "px");
+  setTimeout(() => el.scrollIntoView({ block: "center", behavior: "smooth" }), 50);
+}
+function kbHide(){
+  const el = KB.el; KB.el = null;
+  if (el && el.dataset.kbMode != null){ if (el.dataset.kbMode) el.setAttribute("inputmode", el.dataset.kbMode); else el.removeAttribute("inputmode"); delete el.dataset.kbMode; }
+  if (KB.box) KB.box.hidden = true; document.body.classList.remove("osk-open");
+}
+const kbOn = () => kbWanted(S.kiosk.keyboard || "auto", kbEnv());
+// Set inputmode="none" before the tap focuses the field, or a device's own keyboard may already be on its way.
+document.addEventListener("pointerdown", e => { if (kbOn() && kbKind(e.target)){ if (e.target.dataset.kbMode == null) e.target.dataset.kbMode = e.target.getAttribute("inputmode") ?? ""; e.target.setAttribute("inputmode", "none"); } }, true);
+document.addEventListener("focusin", e => { if (kbOn() && kbKind(e.target)) kbShow(e.target); else if (KB.el) kbHide(); });
+document.addEventListener("focusout", () => setTimeout(() => { if (KB.el && document.activeElement !== KB.el) kbHide(); }, 0));
+document.addEventListener("input", e => { if (KB.el && e.target === KB.el && e.isTrusted) { kbAutoShift(); kbDraw(); } });
 
 buildFlow();
 

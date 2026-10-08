@@ -60,10 +60,14 @@ Tabs: **Visits** (everyone who checked in), **Expected visitors**, **Blocked**, 
   your own dates. On a wide screen the list is a table you can sort; tap a visit to open it.
 - **A visit** shows the details, photo, ID image, signature and devices. From there:
   - **Check out**: marks them as gone and ends their Wi-Fi (unless an admin turned that off).
-  - **End Wi-Fi access**: their guest pass or personal password stops working now. A shared password can't be ended
-    for one person.
+  - **End Wi-Fi access**: their guest pass or personal password is deleted in RUCKUS One, and their devices that are
+    still on the Wi-Fi are disconnected, so they can't get back on. The visit shows how many were disconnected.
+    A shared password can't be ended for one person.
   - **Block this visitor**: they can't check in again with the same name, email or phone, and staff are alerted if
-    they try. Unblock them under the **Blocked** tab.
+    they try. **Also end their Wi-Fi access now** (ticked) ends their access as above. Unblock them under the
+    **Blocked** tab. The block list is Visitor Desk's own: RUCKUS One doesn't show these people as blocked.
+  - **Disconnect their devices** (once access has ended): disconnects their devices again, for example a phone that
+    was still connected.
   - Admins can also **Print badge**, **Email / Text Wi-Fi details** again (with the visitor's current password from
     RUCKUS One) and **Delete this visit**.
 
@@ -151,8 +155,11 @@ The settings page is grouped like this (on a wide screen there's a menu on the l
   changed shows as you typed it.
 - **Look**: light, dark or automatic; color scheme; logo (with size, and the location name under it if you like);
   background image. **Use this look on every kiosk** shares it, with the location name and headline, with all tablets.
-- **Location and screen**: the location name (used in messages and reports), the headline, and how soon the kiosk
-  clears itself.
+- **Location and screen**: the location name (used in messages and reports), the headline, how soon the kiosk
+  clears itself, and the **On-screen keyboard**: for touch screens that don't show their own keyboard, such as a
+  touch-screen PC. **Automatic** shows it on touch screens except iPads, Android tablets and phones (they have their
+  own); **Always show** or **Never show** overrides that. It's set on each device. It has number pads for phone
+  numbers and codes, `@` and `.com` for email, accented letters for names, and suggests hosts as visitors type.
 
 ### Arrivals and departures
 

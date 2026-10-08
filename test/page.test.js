@@ -25,8 +25,8 @@ function grab(name) {
   throw new Error("unbalanced " + name);
 }
 const ctx = vm.createContext({});
-vm.runInContext(["todayStr", "parseCSV", "IMPORT_COLS", "csvDate", "inviteRows", "MERGE_GAP", "mergeStays", "eventRuns", "I18N", "LANGS", "HELP"].map(grab).join("\n")
-  + "\nthis.out = { todayStr, parseCSV, csvDate, inviteRows, mergeStays, eventRuns, I18N, LANGS, HELP };", ctx);
+vm.runInContext(["todayStr", "parseCSV", "IMPORT_COLS", "csvDate", "inviteRows", "MERGE_GAP", "mergeStays", "eventRuns", "I18N", "LANGS", "HELP", "KB_SKIP", "kbWanted", "kbKind", "kbRows"].map(grab).join("\n")
+  + "\nthis.out = { todayStr, parseCSV, csvDate, inviteRows, mergeStays, eventRuns, I18N, LANGS, HELP, kbWanted, kbKind, kbRows };", ctx);
 const P = ctx.out;
 
 test("the page script compiles", () => { new Function(script); });
@@ -118,4 +118,31 @@ test("every settings section has a place in the menu groups", () => {
   assert.ok(titles.length >= 15, `found ${titles.length} sections`);
   assert.deepEqual(titles.filter(t => !placed.includes(t)), [], "sections missing from ADMIN_GROUPS");
   assert.deepEqual(placed.filter(t => !titles.includes(t)), [], "groups name sections that don't exist");
+});
+
+test("on-screen keyboard: shown on touch PCs, not on tablets with their own; the right keys per field", () => {
+  assert.equal(P.kbWanted("auto", { touch: true, mobileOS: false }), true, "touch-screen PC");
+  assert.equal(P.kbWanted("auto", { touch: true, mobileOS: true }), false, "iPad / Android tablet");
+  assert.equal(P.kbWanted("auto", { touch: false, mobileOS: false }), false, "desktop with a keyboard");
+  assert.equal(P.kbWanted("on", { touch: false }), true); assert.equal(P.kbWanted("off", { touch: true }), false);
+  const input = (type, mode, extra = {}) => ({ tagName: "INPUT", type, dataset: {}, getAttribute: a => a === "inputmode" ? mode ?? null : null, ...extra });
+  assert.equal(P.kbKind(input("email", "email")), "email");
+  assert.equal(P.kbKind(input("tel", "tel")), "tel");
+  assert.equal(P.kbKind(input("text", "numeric")), "numeric", "codes");
+  assert.equal(P.kbKind(input("text", "decimal")), "decimal", "IP addresses");
+  assert.equal(P.kbKind(input("password")), "text");
+  assert.equal(P.kbKind(input("text", "none", { dataset: { kbMode: "email" } })), "email", "remembers the field's own mode while ours is up");
+  assert.equal(P.kbKind(input("checkbox")), null); assert.equal(P.kbKind(input("date")), null);
+  assert.equal(P.kbKind(input("text", null, { readOnly: true })), null);
+  assert.equal(P.kbKind({ tagName: "SELECT", dataset: {}, getAttribute: () => null }), null);
+  const keys = (kind, layer) => P.kbRows(kind, layer).flat().map(k => typeof k === "string" ? k : k[0]);
+  for (const kind of ["text", "email", "tel", "numeric", "decimal"]) for (const layer of ["abc", "sym", "acc"]) {
+    const k = keys(kind, layer);
+    assert.ok(k.includes("done"), `${kind}/${layer} can close`);
+    assert.ok(k.includes("back"), `${kind}/${layer} can delete`);
+  }
+  assert.ok(["@", ".com", "q", "m"].every(k => keys("email", "abc").includes(k)));
+  assert.ok(["ñ", "é", "ç", "ü"].every(k => keys("text", "acc").includes(k)), "accented letters for names");
+  assert.equal(keys("numeric").filter(k => /^\d$/.test(k)).sort().join(""), "0123456789");
+  assert.ok(keys("tel").includes("+"));
 });

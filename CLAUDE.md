@@ -411,6 +411,21 @@ API reference: https://docs.ruckus.cloud/api/
   (applied at once, no confirm). The kiosk server only reads/writes data/system; root does everything else.
 - A new address is a new browser origin: tablets must be paired again (localStorage per origin); help/docs say so.
 
+## On-screen keyboard and disconnecting devices (1.9.0)
+- `S.kiosk.keyboard` auto | on | off (per device, Location and screen). `kbWanted()`: auto = touch screen and not
+  iPad/Android/iPhone (`kbEnv()`; iPadOS reports "Macintosh" with maxTouchPoints > 1). Every typing field on the page
+  (visitor flow, sheets, staff sign-in, settings); `kbKind()` picks text/email/tel/numeric/decimal from type/inputmode;
+  `kbRows()` layouts (abc/sym/acc). Sets inputmode="none" while shown (pointerdown, before focus) and restores it.
+  Keys act on pointerdown with preventDefault (field keeps focus); setRangeText + input event; respects maxlength.
+  Fields with a datalist (host type-ahead) get suggestion chips. Name/company/host inputs have autocapitalize="words".
+- Ending access (revoke, block with revoke, checkout) now also disconnects the visitor's devices: `visitMacs()` (tracked
+  devices + `passDevices()`, read BEFORE the pass is deleted), then `disconnectDevices()`: clients query by MAC →
+  `PATCH /venues/{venueId}/aps/{serial}/clients/{mac}` {status:"DISCONNECTED"} (from the docs, as in DwellLink; NOT yet
+  confirmed live). venueId from the client row or apNames(). Result in rec.lastDisconnect {at, disconnected, failed}.
+  Revoke on an already-ended visit just disconnects again ("Disconnect their devices" button). Reported live
+  2026-10-08: a blocked guest's phone stayed connected after the pass was deleted. RUCKUS One has no documented
+  per-device block list API, so Visitor Desk's block list isn't visible in RUCKUS One.
+
 ## Releases (GitHub, from 1.8.1)
 - Code: private repo TerryHenry/visitor-desk. Downloads: public repo TerryHenry/visitor-desk-releases (README, docs/,
   releases only; no code), created 2026-10-07 at the user's request (a release can't be public in a private repo). The

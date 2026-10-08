@@ -1,5 +1,6 @@
 // End-to-end: the visitor side. Check-in (guest pass, DPSK, shared password), check-out, invites, returning
 // visitors, blocked visitors and staff alerts, against the real server with a fake RUCKUS One.
+const plain = x => JSON.parse(JSON.stringify(x));
 const test = require("node:test"), assert = require("node:assert/strict"), fs = require("fs");
 const { startServer, adminToken, checkin, waitFor } = require("./helpers");
 
@@ -127,6 +128,25 @@ test("blocked visitor is refused and staff are alerted", async () => {
   assert.equal(r.status, 403); assert.equal(r.body.blocked, true);
   const alert = await waitFor(() => s.smtp.messages.find(m => m.to.includes("ops@test.example") && /Blocked visitor/.test(m.subject)));
   assert.ok(alert, "staff alert email");
+});
+
+test("ending access also disconnects the visitor's devices that are still on the Wi-Fi", async () => {
+  const ci = await checkin(s, { name: "Kick Me", mode: "dpsk", visitor: { email: "kick@visitor.example", phone: "727-555-0199" } }); assert.equal(ci.status, 200, JSON.stringify(ci.body));
+  const v = await visitOf("Kick Me");
+  s.setState({ dpskDevices: [{ mac: "AA:BB:CC:00:00:09" }, { mac: "AA:BB:CC:00:00:0A" }],   // the second one isn't connected
+    clients: [{ macAddress: "AA:BB:CC:00:00:09", hostname: "Kick-Phone", apInformation: { name: "Lobby AP", macAddress: "11:11:11:00:00:02", serialNumber: "S2" } }] });
+  const r = await s.api("POST", `/api/admin/visits/${v.id}/block`, { reason: "test", revoke: true }, admin);
+  assert.equal(r.status, 200); assert.equal(r.body.ended, "ended");
+  assert.deepEqual(plain(r.body.record.lastDisconnect && { d: r.body.record.lastDisconnect.disconnected, f: r.body.record.lastDisconnect.failed }), { d: 1, f: 0 });
+  const kicks = () => s.calls().filter(c => c.method === "PATCH" && /\/clients\//.test(c.path));
+  assert.equal(kicks().length, 1);
+  assert.match(kicks()[0].path, /^\/venues\/v1\/aps\/S2\/clients\/AA%3ABB%3ACC%3A00%3A00%3A09$/, "venue from the AP list, the AP's serial, the device's MAC");
+  // The device is still on (or came back before the pass was gone): staff can disconnect it again.
+  const again = await s.api("POST", `/api/admin/visits/${v.id}/revoke`, undefined, admin);
+  assert.equal(again.status, 200); assert.equal(again.body.ended, "already"); assert.equal(kicks().length, 2);
+  const audit = (await s.api("GET", "/api/admin/audit?q=Kick", undefined, admin)).body.map(a => a.action + ": " + a.detail);
+  assert.ok(audit.some(a => /Ended Wi-Fi access: .*1 device\(s\) disconnected/.test(a)), audit.join("\n"));
+  s.setState({});
 });
 
 test("records keep a check-out code only while on site; CSV neutralises formulas", async () => {

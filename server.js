@@ -1361,9 +1361,37 @@ function blockedMatch(v) {
 }
 
 // End a visitor's Wi-Fi access in RUCKUS One (guest pass or DPSK passphrase). A shared password can't be ended per visitor.
+// Deleting a pass only stops new connections: a phone that's already on stays on until it reconnects (seen live
+// 2026-10-08: a blocked guest kept working). So the visitor's devices are found first (afterwards RUCKUS One can't say
+// which devices used the pass), and each one still connected is disconnected after the pass is gone.
+async function visitMacs(rec) {
+  const macs = new Set(Object.keys(readDevices(rec.id)).map(normMac));
+  try { for (const k of await passDevices(rec)) macs.add(normMac(k.mac)); } catch {}
+  return [...macs].filter(Boolean);
+}
+// "Patch AP Client" (PATCH /venues/{venue}/aps/{serial}/clients/{mac} {status: "DISCONNECTED"}, from the RUCKUS One docs,
+// as DwellLink uses it): a one-time kick from the AP the device is on now.
+async function disconnectDevices(macs) {
+  const out = { disconnected: 0, failed: 0 };
+  if (!macs.length || !R1.clientSecret) return out;
+  const names = await apNames();
+  for (const mac of macs) {
+    try {
+      const c = listOf(await r1("POST", "/venues/aps/clients/query", { page: 1, pageSize: 10, filters: { macAddress: [mac] } })).find(x => normMac(x.macAddress) === mac);
+      if (!c) continue;   // not connected now
+      const ap = names.get(normMac(c.apInformation?.macAddress)) || {};
+      const venueId = c.venueInformation?.id || c.venueId || ap.venueId, serial = c.apInformation?.serialNumber || ap.serial;
+      if (!venueId || !serial) throw new Error("RUCKUS One didn't say which venue and access point it's on");
+      await r1("PATCH", `/venues/${encodeURIComponent(venueId)}/aps/${encodeURIComponent(serial)}/clients/${encodeURIComponent(c.macAddress)}`, { status: "DISCONNECTED" });
+      out.disconnected++;
+    } catch (e) { out.failed++; recordProblem("Ending Wi-Fi access", `Couldn't disconnect device ${mac}: ${e.message}`); }
+  }
+  return out;
+}
 async function revokeAccess(rec) {
-  if (rec.revokedAt) return "already";
+  if (rec.revokedAt) { if (rec.ruckusId) rec.lastDisconnect = { at: new Date().toISOString(), ...await disconnectDevices(await visitMacs(rec)) }; return "already"; }
   if (!rec.ruckusId) throw new Error(rec.mode === "psk" ? "Everyone shares this Wi-Fi password, so one visitor's access can't be ended. Change the network password in RUCKUS One instead." : "This visit has no RUCKUS One pass to end.");
+  const macs = await visitMacs(rec);
   if (rec.mode === "portal") {
     const net = rec.wifiNetworkId || cfg.guestPass?.wifiNetworkId;
     await r1("DELETE", `/wifiNetworks/${encodeURIComponent(net)}/guestUsers/${encodeURIComponent(rec.ruckusId)}`);
@@ -1371,6 +1399,7 @@ async function revokeAccess(rec) {
     const pool = rec.dpskPoolId || cfg.dpsk?.poolId;
     await r1("DELETE", `/dpskServices/${encodeURIComponent(pool)}/passphrases`, [rec.ruckusId]);   // plain array of ids
   } else throw new Error("This visit has no RUCKUS One pass to end.");
+  rec.lastDisconnect = { at: new Date().toISOString(), ...await disconnectDevices(macs) };
   return "ended";
 }
 // The visitor's current Wi-Fi details, read from RUCKUS One (the kiosk doesn't keep passwords), for reprinting a badge
@@ -1499,7 +1528,9 @@ async function handleAdmin(req, res, url) {
     if (act[2] === "revoke" || b.revoke) {
       try { ended = await revokeAccess(rec); }
       catch (e) { if (act[2] === "revoke") return send(res, 400, { error: e.message }); ended = "not ended: " + e.message; }
-      if (ended === "ended") { rec.revokedAt = new Date().toISOString(); rec.revokedBy = who; delete rec.passCode; console.log(`Wi-Fi access for ${rec.name} ended by "${who}".`); audit(req, who, "Ended Wi-Fi access", `${rec.name} (${rec.id})`); }
+      const kicked = rec.lastDisconnect ? `; ${rec.lastDisconnect.disconnected} device(s) disconnected${rec.lastDisconnect.failed ? `, ${rec.lastDisconnect.failed} couldn't be` : ""}` : "";
+      if (ended === "ended") { rec.revokedAt = new Date().toISOString(); rec.revokedBy = who; delete rec.passCode; console.log(`Wi-Fi access for ${rec.name} ended by "${who}"${kicked}.`); audit(req, who, "Ended Wi-Fi access", `${rec.name} (${rec.id})${kicked}`); }
+      else if (ended === "already" && rec.lastDisconnect) audit(req, who, "Disconnected a visitor's devices", `${rec.name} (${rec.id})${kicked}`);
     }
     if (act[2] === "block") {
       const list = readBlocks();
