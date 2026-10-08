@@ -124,12 +124,17 @@ function apply(s) {
   activate();
 }
 // Can this VM reach what it needs with the new settings? Shown to the admin before they keep a change.
+// Right after `netplan apply` the resolver restarts, so each check gets ~20 seconds before it counts as failed.
 async function checks(s) {
-  const gw = (live(iface().name).gateway) || s.gateway;
-  const c = { gateway: !!gw && sh("ping", ["-c", "1", "-W", "2", gw]) !== "" };
-  c.dns = sh("getent", ["hosts", "ruckus.cloud"]) !== "";
-  try { await fetch("https://ruckus.cloud/", { method: "HEAD", signal: AbortSignal.timeout(6000) }); c.internet = true; } catch { c.internet = false; }
-  return c;
+  const gw = (live(iface().name).gateway) || s.gateway, until = Date.now() + 20e3;
+  const c = { gateway: false, dns: false, internet: false };
+  while (true) {
+    c.gateway ||= !!gw && sh("ping", ["-c", "1", "-W", "2", gw]) !== "";
+    c.dns ||= sh("getent", ["hosts", "ruckus.cloud"], 5e3) !== "";
+    if (c.dns && !c.internet) { try { await fetch("https://ruckus.cloud/", { method: "HEAD", signal: AbortSignal.timeout(6000) }); c.internet = true; } catch {} }
+    if ((c.gateway && c.dns && c.internet) || Date.now() > until) return c;
+    await sleep(2000);
+  }
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const restartKiosk = () => { sh("systemctl", ["restart", "visitor-kiosk"]); sh("/usr/local/sbin/kiosk-console", []); };
