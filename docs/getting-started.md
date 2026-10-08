@@ -49,8 +49,10 @@ address with prefix (for example `192.168.10.50/24`), gateway and DNS servers. O
 `kiosk network static 192.168.10.50/24 192.168.10.1 192.168.10.1,1.1.1.1`. `kiosk network dhcp` switches back.
 Without DHCP the boot waits about 30 seconds for an address and then carries on.
 
-Give the VM a fixed address (static, or a DHCP reservation), so tablets keep finding it. The HTTPS certificate follows
-the address automatically, and tablets don't need the certificate installed again.
+Give the VM a fixed address, so tablets keep finding it: a reservation on your DHCP server, or a static address. Set
+it now, before you set up the tablets (each tablet is paired to the address it uses). Either use `kiosk network` on the
+console as above, or, after the first setup below, **Admin → Network** in the browser, where you can also set the
+DNS and time (NTP) servers.
 
 ## 4. First setup
 

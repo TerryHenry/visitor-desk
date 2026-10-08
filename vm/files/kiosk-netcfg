@@ -1,0 +1,196 @@
+#!/opt/node/bin/node
+// Network settings for the Visitor Desk VM: DHCP or a static address, gateway, DNS servers, search domains and NTP
+// servers. Runs as root. Used three ways:
+//   kiosk-netcfg state              write the current settings for the admin panel (data/system/network-state.json)
+//   kiosk-netcfg web                apply what an admin asked for in the admin panel (data/system/network.request);
+//                                   started by kiosk-netcfg.path. A change of address, gateway or DHCP/static is kept
+//                                   only if an admin confirms it within 3 minutes (network.confirm); otherwise, or on
+//                                   network.revert, the previous settings come back.
+//   kiosk-netcfg set key=value ...  from the console (the `kiosk network` and `kiosk ntp` commands): applied at once.
+//                                   Keys: mode (dhcp|static), address (a.b.c.d/prefix), gateway, dns, search, ntp
+//                                   (lists comma-separated; "dns=" clears). Keys not given keep their current value.
+// The kiosk server (user "kiosk") can only drop request files; the checks below are repeated here on purpose.
+"use strict";
+const fs = require("fs"), path = require("path"), { execFileSync } = require("child_process");
+
+const DIR = process.env.KIOSK_NET_DIR || "/opt/visitor-kiosk/data/system";
+const SAVED = "/etc/visitor-kiosk/network.json";               // the settings last applied by this tool
+const NETPLAN = "/etc/netplan/90-visitor-kiosk.yaml";
+const NTP_CONF = "/etc/systemd/timesyncd.conf.d/90-visitor-desk.conf";
+const TOUCHED = [NETPLAN, "/etc/netplan/50-cloud-init.yaml", "/etc/netplan/50-cloud-init.yaml.disabled",
+  "/etc/cloud/cloud.cfg.d/99-disable-network-config.cfg", SAVED, NTP_CONF];
+const CONFIRM_SECONDS = 180;
+
+/* ---------------- Checks (the kiosk server has the same ones, in netSettings()) ---------------- */
+const IPV4 = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+const HOST = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/i;
+const ipNum = ip => ip.split(".").reduce((n, o) => n * 256 + Number(o), 0);
+const list = v => (Array.isArray(v) ? v : String(v ?? "").split(/[\s,]+/)).map(x => String(x).trim()).filter(Boolean);
+function bad(message) { const e = new Error(message); e.status = 400; throw e; }
+function validate(s) {
+  const out = { mode: s.mode === "static" ? "static" : s.mode === "dhcp" ? "dhcp" : bad("Choose DHCP or a static address.") };
+  out.dns = list(s.dns); out.search = list(s.search).map(d => d.toLowerCase()); out.ntp = list(s.ntp).map(d => d.toLowerCase());
+  if (out.mode === "static") {
+    let addr = String(s.address || "").trim(), prefix = s.prefix;
+    if (addr.includes("/")) [addr, prefix] = addr.split("/");
+    prefix = Number(prefix);
+    if (!IPV4.test(addr)) bad("Use an IP address like 192.168.10.50.");
+    if (!Number.isInteger(prefix) || prefix < 8 || prefix > 30) bad("Use a prefix from 8 to 30 (24 is 255.255.255.0).");
+    const first = Number(addr.split(".")[0]);
+    if (first === 0 || first === 127 || first >= 224) bad(`${addr} can't be used as this VM's address.`);
+    const mask = prefix ? (0xffffffff << (32 - prefix)) >>> 0 : 0, net = (ipNum(addr) & mask) >>> 0, bcast = (net | ~mask) >>> 0;
+    if (ipNum(addr) === net || ipNum(addr) === bcast) bad(`${addr}/${prefix} is the network's own or broadcast address. Pick another address.`);
+    const gw = String(s.gateway || "").trim();
+    if (!IPV4.test(gw)) bad("Use a gateway like 192.168.10.1.");
+    if (((ipNum(gw) & mask) >>> 0) !== net) bad(`The gateway ${gw} isn't on the ${addr}/${prefix} network.`);
+    if (gw === addr) bad("The gateway can't be this VM's own address.");
+    if (!out.dns.length) bad("Add at least one DNS server.");
+    Object.assign(out, { address: addr, prefix, gateway: gw });
+  }
+  if (out.dns.length > 3) bad("Use at most 3 DNS servers.");
+  for (const d of out.dns) if (!IPV4.test(d)) bad(`"${d}" isn't an IPv4 address (DNS servers are addresses, like 1.1.1.1).`);
+  if (out.search.length > 3) bad("Use at most 3 search domains.");
+  for (const d of out.search) if (!HOST.test(d)) bad(`"${d}" isn't a domain name.`);
+  if (out.ntp.length > 4) bad("Use at most 4 time (NTP) servers.");
+  for (const d of out.ntp) if (!HOST.test(d)) bad(`"${d}" isn't a server name or address.`);
+  return out;
+}
+// A change that can cut the admin off (address, prefix, gateway, DHCP/static) has to be confirmed.
+const risky = (a, b) => a.mode !== b.mode || (b.mode === "static" && (a.address !== b.address || a.prefix !== b.prefix || a.gateway !== b.gateway));
+
+/* ---------------- Files ---------------- */
+function netplanYaml(ifc, s) {
+  const y = ["network:", "  version: 2", "  ethernets:", `    ${ifc}:`];
+  if (s.mode === "static") y.push("      dhcp4: false", `      addresses: [${s.address}/${s.prefix}]`, "      routes:", "        - to: default", `          via: ${s.gateway}`);
+  else { y.push("      dhcp4: true"); if (s.dns.length) y.push("      dhcp4-overrides:", "        use-dns: false"); }
+  if (s.ntp.length && s.mode === "dhcp") y.push(...(s.dns.length ? [] : ["      dhcp4-overrides:"]), "        use-ntp: false");
+  if (s.dns.length || s.search.length) {
+    y.push("      nameservers:");
+    if (s.dns.length) y.push(`        addresses: [${s.dns.join(", ")}]`);
+    if (s.search.length) y.push(`        search: [${s.search.join(", ")}]`);
+  }
+  return y.join("\n") + "\n";
+}
+const ntpConf = s => s.ntp.length ? `# Set by Visitor Desk (admin panel or "kiosk ntp")\n[Time]\nNTP=${s.ntp.join(" ")}\n` : null;
+
+const read = f => { try { return fs.readFileSync(f, "utf8"); } catch { return null; } };
+const readJson = f => { try { return JSON.parse(fs.readFileSync(f, "utf8")); } catch { return null; } };
+function write(f, text, mode = 0o644) { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f + ".new", text, { mode }); fs.renameSync(f + ".new", f); }
+function forKiosk(f, data) {   // files the kiosk server reads
+  fs.mkdirSync(DIR, { recursive: true }); write(f, JSON.stringify(data) + "\n", 0o640);
+  try { execFileSync("chown", ["kiosk:kiosk", f]); } catch {}
+}
+const sh = (cmd, args, timeout = 30e3) => { try { return execFileSync(cmd, args, { encoding: "utf8", timeout, stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return ""; } };
+
+function iface() {
+  try { const l = JSON.parse(sh("ip", ["-j", "link", "show"]) || "[]").find(x => x.ifname !== "lo" && x.link_type === "ether"); if (l) return { name: l.ifname, mac: l.address }; } catch {}
+  return { name: "eth0", mac: "" };
+}
+// Settings as configured: ours if we wrote them, else DHCP from cloud-init.
+const configured = () => ({ mode: "dhcp", dns: [], search: [], ntp: [], ...(readJson(SAVED) || {}) });
+
+function live(ifc) {
+  const j = c => { try { return JSON.parse(c || "[]"); } catch { return []; } };
+  const addrs = j(sh("ip", ["-j", "-4", "addr", "show", "dev", ifc])).flatMap(x => x.addr_info || []).map(a => `${a.local}/${a.prefixlen}`);
+  const gateway = (j(sh("ip", ["-j", "-4", "route", "show", "default"]))[0] || {}).gateway || "";
+  const dns = [...new Set((sh("resolvectl", ["dns", ifc]).split(":").slice(1).join(":").match(/\d+\.\d+\.\d+\.\d+/g) || []))];
+  const search = sh("resolvectl", ["domain", ifc]).split(":").slice(1).join(":").trim().split(/\s+/).filter(Boolean);
+  const ntpServer = sh("timedatectl", ["show-timesync", "-p", "ServerName", "--value"]);
+  const ntpSynced = sh("timedatectl", ["show", "-p", "NTPSynchronized", "--value"]) === "yes";
+  return { addresses: addrs, gateway, dns, search, ntpServer, ntpSynced, time: new Date().toISOString() };
+}
+function writeState() {
+  const i = iface();
+  forKiosk(path.join(DIR, "network-state.json"), { interface: i.name, mac: i.mac, configured: configured(), live: live(i.name), at: new Date().toISOString() });
+}
+const status = data => forKiosk(path.join(DIR, "network-status.json"), { ...data, at: new Date().toISOString() });
+
+/* ---------------- Apply and undo ---------------- */
+function snapshot() { const s = {}; for (const f of TOUCHED) s[f] = read(f); return s; }
+function restore(snap) { for (const [f, text] of Object.entries(snap)) { if (text === null) fs.rmSync(f, { force: true }); else write(f, text, f === NETPLAN ? 0o600 : 0o644); } }
+function activate() {
+  execFileSync("netplan", ["generate"], { timeout: 30e3 });
+  sh("netplan", ["apply"], 60e3);
+  sh("systemctl", ["restart", "systemd-timesyncd"]);
+}
+function apply(s) {
+  const i = iface();
+  write(NETPLAN, netplanYaml(i.name, s), 0o600);
+  // cloud-init's own file would still ask for DHCP; keep it out of the way and stop cloud-init rewriting it.
+  if (fs.existsSync("/etc/netplan/50-cloud-init.yaml")) fs.renameSync("/etc/netplan/50-cloud-init.yaml", "/etc/netplan/50-cloud-init.yaml.disabled");
+  write("/etc/cloud/cloud.cfg.d/99-disable-network-config.cfg", "network: {config: disabled}\n");
+  const ntp = ntpConf(s); if (ntp) write(NTP_CONF, ntp); else fs.rmSync(NTP_CONF, { force: true });
+  write(SAVED, JSON.stringify(s, null, 2) + "\n", 0o600);
+  activate();
+}
+// Can this VM reach what it needs with the new settings? Shown to the admin before they keep a change.
+async function checks(s) {
+  const gw = (live(iface().name).gateway) || s.gateway;
+  const c = { gateway: !!gw && sh("ping", ["-c", "1", "-W", "2", gw]) !== "" };
+  c.dns = sh("getent", ["hosts", "ruckus.cloud"]) !== "";
+  try { await fetch("https://ruckus.cloud/", { method: "HEAD", signal: AbortSignal.timeout(6000) }); c.internet = true; } catch { c.internet = false; }
+  return c;
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const restartKiosk = () => { sh("systemctl", ["restart", "visitor-kiosk"]); sh("/usr/local/sbin/kiosk-console", []); };
+
+async function web() {
+  const reqFile = path.join(DIR, "network.request");
+  const req = readJson(reqFile); fs.rmSync(reqFile, { force: true });
+  for (const f of ["network.confirm", "network.revert"]) fs.rmSync(path.join(DIR, f), { force: true });
+  if (!req) return;
+  const before = configured(); let s;
+  try { s = validate(req.settings || {}); } catch (e) { status({ state: "failed", message: e.message, by: req.by }); return; }
+  const snap = snapshot(), confirm = risky(before, s);
+  status({ state: "applying", from: before, to: s, by: req.by });
+  try { apply(s); } catch (e) {
+    restore(snap); try { activate(); } catch {}
+    status({ state: "failed", message: "The new settings couldn't be used (netplan refused them). Nothing changed.", from: before, to: s, by: req.by });
+    writeState(); return;
+  }
+  await sleep(4000);
+  writeState();
+  const c = await checks(s);
+  if (!confirm) { status({ state: "done", from: before, to: s, checks: c, by: req.by }); sh("/usr/local/sbin/kiosk-console", []); return; }
+  const deadline = Date.now() + CONFIRM_SECONDS * 1000;
+  status({ state: "waiting", from: before, to: s, checks: c, deadline: new Date(deadline).toISOString(), by: req.by });
+  restartKiosk();   // new HTTPS certificate for the new address
+  while (Date.now() < deadline) {
+    await sleep(1000);
+    if (fs.existsSync(path.join(DIR, "network.confirm"))) {
+      fs.rmSync(path.join(DIR, "network.confirm"), { force: true });
+      status({ state: "done", from: before, to: s, checks: c, by: req.by, confirmed: true }); writeState(); return;
+    }
+    if (fs.existsSync(path.join(DIR, "network.revert"))) break;
+  }
+  const asked = fs.existsSync(path.join(DIR, "network.revert"));
+  fs.rmSync(path.join(DIR, "network.revert"), { force: true });
+  restore(snap); try { activate(); } catch {}
+  await sleep(4000);
+  status({ state: "reverted", from: before, to: s, checks: c, by: req.by,
+    message: asked ? "Went back to the previous settings, as asked." : "Nobody confirmed the new settings within 3 minutes, so the previous ones are back." });
+  writeState(); restartKiosk();
+}
+function cli(args) {
+  const cur = configured(), next = { ...cur };
+  for (const a of args) {
+    const m = /^(mode|address|gateway|dns|search|ntp)=(.*)$/.exec(a);
+    if (!m) bad(`Unknown setting "${a}". Use mode=, address=, gateway=, dns=, search= or ntp=.`);
+    next[m[1]] = ["dns", "search", "ntp"].includes(m[1]) ? list(m[2]) : m[2];
+  }
+  if (next.mode === "dhcp") { delete next.address; delete next.prefix; delete next.gateway; }
+  const s = validate(next);
+  apply(s); writeState(); status({ state: "done", from: cur, to: s, by: "console" });
+  if (risky(cur, s)) restartKiosk(); else sh("/usr/local/sbin/kiosk-console", []);
+  return s;
+}
+
+if (require.main === module) {
+  const [cmd, ...rest] = process.argv.slice(2);
+  (async () => {
+    if (cmd === "state") writeState();
+    else if (cmd === "web") await web();
+    else if (cmd === "set") { const s = cli(rest); console.log(JSON.stringify(s)); }
+    else { console.error("Usage: kiosk-netcfg state | web | set key=value ..."); process.exit(2); }
+  })().catch(e => { console.error(e.message); process.exit(e.status === 400 ? 3 : 1); });
+} else module.exports = { validate, risky, netplanYaml, ntpConf };

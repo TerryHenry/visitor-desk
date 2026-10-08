@@ -31,8 +31,9 @@ the VM starts; the first boot works without internet (RUCKUS One still needs it)
   analytics, a daily or weekly summary email and staff alerts.
 - **Security and privacy.** Staff accounts with roles and two-step sign-in, paired tablets, HTTPS with its own
   certificate, a block list, an audit log, retention limits and privacy requests (export or delete one person).
-- **Easy to run.** A ready-made VM for ESXi and vSphere, set up from the browser, with signed updates installed from
-  the admin panel, automatic rollback, encrypted backups and a firewall.
+- **Easy to run.** A ready-made VM for ESXi and vSphere, set up from the browser: static address, DNS and time
+  servers (with automatic undo if a change cuts you off), signed updates with automatic rollback, encrypted backups
+  and a firewall.
 
 ## Documentation
 

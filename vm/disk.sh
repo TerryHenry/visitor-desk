@@ -41,6 +41,8 @@ install -m 0755 /in/vm/files/kiosk-harden "$R/usr/local/sbin/kiosk-harden"
 # Updates from the admin panel: installed here, switched on by visitor-kiosk.service at start (as after an update).
 install -m 0755 /in/vm/files/kiosk-web-update "$R/usr/local/sbin/kiosk-web-update"
 install -m 0644 /in/vm/files/kiosk-web-update.path /in/vm/files/kiosk-web-update.service "$R/etc/systemd/system/"
+install -m 0755 /in/vm/files/kiosk-netcfg "$R/usr/local/sbin/kiosk-netcfg"
+install -m 0644 /in/vm/files/kiosk-netcfg.path /in/vm/files/kiosk-netcfg.service "$R/etc/systemd/system/"
 # Public half of the update signing key: `kiosk update` only installs updates signed with the private half.
 install -d -m 0755 "$R/etc/visitor-kiosk"
 install -m 0644 /in/vm/keys/update-signing.pub "$R/etc/visitor-kiosk/update-signing.pub"

@@ -9,8 +9,9 @@ PREV=/opt/visitor-kiosk-previous
 PUB=/etc/visitor-kiosk/update-signing.pub
 NODE=/opt/node/bin/node
 APP_FILES=(server.js package.json README.md config.example.json public .version.json)
-SYS_FILES=(/usr/local/bin/kiosk /usr/local/sbin/kiosk-console /usr/local/sbin/kiosk-update /usr/local/sbin/kiosk-harden /usr/local/sbin/kiosk-web-update
+SYS_FILES=(/usr/local/bin/kiosk /usr/local/sbin/kiosk-console /usr/local/sbin/kiosk-update /usr/local/sbin/kiosk-harden /usr/local/sbin/kiosk-web-update /usr/local/sbin/kiosk-netcfg
   /etc/systemd/system/kiosk-web-update.path /etc/systemd/system/kiosk-web-update.service
+  /etc/systemd/system/kiosk-netcfg.path /etc/systemd/system/kiosk-netcfg.service
   /etc/systemd/system/visitor-kiosk.service /etc/systemd/system/kiosk-console.service /etc/systemd/system/kiosk-console.timer
   /etc/systemd/system/systemd-networkd-wait-online.service.d/10-visitor-kiosk.conf)
 
@@ -103,7 +104,7 @@ if [ -n "$NEW_NODE" ]; then
 fi
 if [ -d "$WORK/p/system" ]; then
   install_tree "$WORK/p/system"
-  chown root:root /usr/local/bin/kiosk /usr/local/sbin/kiosk-console /usr/local/sbin/kiosk-update /usr/local/sbin/kiosk-harden /usr/local/sbin/kiosk-web-update 2>/dev/null || true
+  chown root:root /usr/local/bin/kiosk /usr/local/sbin/kiosk-console /usr/local/sbin/kiosk-update /usr/local/sbin/kiosk-harden /usr/local/sbin/kiosk-web-update /usr/local/sbin/kiosk-netcfg 2>/dev/null || true
 fi
 systemctl daemon-reload
 systemctl restart visitor-kiosk

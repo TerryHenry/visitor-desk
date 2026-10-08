@@ -16,10 +16,11 @@ system = {  # path on the VM -> file in vm/files
     "etc/systemd/system/visitor-kiosk.service": "visitor-kiosk.service",
     "etc/systemd/system/kiosk-console.service": "kiosk-console.service", "etc/systemd/system/kiosk-console.timer": "kiosk-console.timer",
     "etc/systemd/system/systemd-networkd-wait-online.service.d/10-visitor-kiosk.conf": "wait-online.conf",
-    "usr/local/sbin/kiosk-web-update": "kiosk-web-update",
+    "usr/local/sbin/kiosk-web-update": "kiosk-web-update", "usr/local/sbin/kiosk-netcfg": "kiosk-netcfg",
+    "etc/systemd/system/kiosk-netcfg.path": "kiosk-netcfg.path", "etc/systemd/system/kiosk-netcfg.service": "kiosk-netcfg.service",
     "etc/systemd/system/kiosk-web-update.path": "kiosk-web-update.path", "etc/systemd/system/kiosk-web-update.service": "kiosk-web-update.service",
 }
-EXEC = {"usr/local/bin/kiosk", "usr/local/sbin/kiosk-console", "usr/local/sbin/kiosk-update", "usr/local/sbin/kiosk-harden", "usr/local/sbin/kiosk-web-update"}
+EXEC = {"usr/local/bin/kiosk", "usr/local/sbin/kiosk-console", "usr/local/sbin/kiosk-update", "usr/local/sbin/kiosk-harden", "usr/local/sbin/kiosk-web-update", "usr/local/sbin/kiosk-netcfg"}
 
 def add(t, src, arc, mode):
     i = t.gettarinfo(src, arcname=arc); i.uid = i.gid = 0; i.uname = i.gname = "root"; i.mode = mode

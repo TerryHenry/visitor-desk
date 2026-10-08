@@ -1585,6 +1585,30 @@ async function handleAdmin(req, res, url) {
       return send(res, 200, { ok: true });
     }
   }
+  // Network settings (admins only; on the VM).
+  if (p.startsWith("/network")) {
+    if (session.user.role !== "admin") return send(res, 403, { error: "Only an admin can change the network settings." });
+    if (p === "/network" && req.method === "GET") return send(res, 200, netInfo());
+    if (!netOn()) return send(res, 409, { error: "Network settings from the admin panel work on the Visitor Desk VM." });
+    fs.mkdirSync(NET_DIR, { recursive: true });
+    const st = netInfo().status, busy = ["queued", "applying", "waiting"].includes(st?.state);
+    if (p === "/network" && req.method === "PUT") {
+      if (busy) return send(res, 409, { error: "A network change is still in progress. Wait for it to finish." });
+      let s; try { s = netSettings(await readBody(req, 4096)); } catch (e) { return send(res, e.status || 400, { error: e.message }); }
+      const by = session.user.name;
+      fs.writeFileSync(path.join(NET_DIR, "network-status.json"), JSON.stringify({ state: "queued", to: s, by, at: new Date().toISOString() }));
+      fs.writeFileSync(path.join(NET_DIR, "network.request"), JSON.stringify({ settings: s, by, at: new Date().toISOString() }));
+      audit(req, by, "Changed the network settings", s.mode === "static" ? `static ${s.address}/${s.prefix} via ${s.gateway}` : "DHCP");
+      return send(res, 200, netInfo());
+    }
+    if ((p === "/network/confirm" || p === "/network/revert") && req.method === "POST") {
+      if (st?.state !== "waiting") return send(res, 400, { error: "There's no network change waiting to be kept." });
+      const keep = p.endsWith("confirm");
+      fs.writeFileSync(path.join(NET_DIR, keep ? "network.confirm" : "network.revert"), new Date().toISOString());
+      audit(req, session.user.name, keep ? "Kept the new network settings" : "Went back to the previous network settings", "");
+      return send(res, 200, { ok: true });
+    }
+  }
   // Emergency message and roll call (admins and front desk).
   if (p === "/emergency" && req.method === "GET") {
     const list = readEmerg(), last = list[list.length - 1] || null, count = mode => { const l = emergencyPeople(mode);
@@ -2757,6 +2781,53 @@ function settled(st, cur) {
   return { ...st, state: st.rollback || st.state === "rolling-back" ? "rolled-back" : "done", to: cur.version };
 }
 
+/* ---------------- Network settings (admins, on the VM) ----------------
+   Like updates: the server only drops a request in data/system; root's kiosk-netcfg (vm/files) checks it again and
+   applies it. A new address, gateway or DHCP/static must be confirmed within 3 minutes or it's undone. */
+const NET_DIR = env.KIOSK_NET_DIR || path.join(ROOT, "data", "system");
+const netOn = () => !!env.KIOSK_NET_DIR || (fs.existsSync("/usr/local/sbin/kiosk-netcfg") && fs.existsSync("/etc/systemd/system/kiosk-netcfg.path"));
+const IPV4_RE = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+const HOST_RE = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/i;
+// The same checks as validate() in vm/files/kiosk-netcfg (test/network.test.js keeps them in step).
+function netSettings(s = {}) {
+  const bad = m => { throw Object.assign(new Error(m), { status: 400 }); };
+  const ipNum = ip => ip.split(".").reduce((n, o) => n * 256 + Number(o), 0);
+  const list = v => (Array.isArray(v) ? v : String(v ?? "").split(/[\s,]+/)).map(x => String(x).trim()).filter(Boolean);
+  const out = { mode: s.mode === "static" ? "static" : s.mode === "dhcp" ? "dhcp" : bad("Choose DHCP or a static address.") };
+  out.dns = list(s.dns); out.search = list(s.search).map(d => d.toLowerCase()); out.ntp = list(s.ntp).map(d => d.toLowerCase());
+  if (out.mode === "static") {
+    let addr = String(s.address || "").trim(), prefix = s.prefix;
+    if (addr.includes("/")) [addr, prefix] = addr.split("/");
+    prefix = Number(prefix);
+    if (!IPV4_RE.test(addr)) bad("Use an IP address like 192.168.10.50.");
+    if (!Number.isInteger(prefix) || prefix < 8 || prefix > 30) bad("Use a prefix from 8 to 30 (24 is 255.255.255.0).");
+    const first = Number(addr.split(".")[0]);
+    if (first === 0 || first === 127 || first >= 224) bad(`${addr} can't be used as this VM's address.`);
+    const mask = (0xffffffff << (32 - prefix)) >>> 0, net = (ipNum(addr) & mask) >>> 0, bcast = (net | ~mask) >>> 0;
+    if (ipNum(addr) === net || ipNum(addr) === bcast) bad(`${addr}/${prefix} is the network's own or broadcast address. Pick another address.`);
+    const gw = String(s.gateway || "").trim();
+    if (!IPV4_RE.test(gw)) bad("Use a gateway like 192.168.10.1.");
+    if (((ipNum(gw) & mask) >>> 0) !== net) bad(`The gateway ${gw} isn't on the ${addr}/${prefix} network.`);
+    if (gw === addr) bad("The gateway can't be this VM's own address.");
+    if (!out.dns.length) bad("Add at least one DNS server.");
+    Object.assign(out, { address: addr, prefix, gateway: gw });
+  }
+  if (out.dns.length > 3) bad("Use at most 3 DNS servers.");
+  for (const d of out.dns) if (!IPV4_RE.test(d)) bad(`"${d}" isn't an IPv4 address (DNS servers are addresses, like 1.1.1.1).`);
+  if (out.search.length > 3) bad("Use at most 3 search domains.");
+  for (const d of out.search) if (!HOST_RE.test(d)) bad(`"${d}" isn't a domain name.`);
+  if (out.ntp.length > 4) bad("Use at most 4 time (NTP) servers.");
+  for (const d of out.ntp) if (!HOST_RE.test(d)) bad(`"${d}" isn't a server name or address.`);
+  return out;
+}
+function netInfo() {
+  let st = readJson(path.join(NET_DIR, "network-status.json"));
+  // Picked up within seconds on the VM; a request still waiting after 2 minutes means the watcher isn't running.
+  if (st?.state === "queued" && Date.now() - Date.parse(st.at) > 120e3)
+    st = { ...st, state: "failed", message: "The VM didn't pick up the change. Restart the VM, or use \"kiosk network\" on the console." };
+  return { available: netOn(), state: readJson(path.join(NET_DIR, "network-state.json")), status: st };
+}
+
 /* ---------------- Privacy requests: everything about one person ---------------- */
 function personMatches(q) {
   const s = String(q || "").trim();
@@ -2791,7 +2862,7 @@ async function check() {
 if (require.main !== module) {
   module.exports = { makePassword, poolRule, passwordFromRule, ruleStrength, e164, normMac, r1Time, firstName, onSite, onlineNow,
     pdfTable, fitText, pdfChars, zoned, zonedMidnight, summaryPeriod, cleanInvite, blockedMatch, normName, normPhone, totp, base32, unbase32,
-    hashPassword, passwordMatches, esc, deviceBrief, devLabel, tarEntries, readKup };
+    hashPassword, passwordMatches, esc, deviceBrief, devLabel, tarEntries, readKup, netSettings };
 } else if (process.argv[2] === "check") {
   check().catch(e => { console.error(e.message); process.exit(1); });
 } else if (process.argv[2] === "reset-admin") {

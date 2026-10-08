@@ -1,0 +1,8 @@
+[Unit]
+Description=Apply network settings changed in the Visitor Desk admin panel
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/kiosk-netcfg web
+# Waits up to 3 minutes for an admin to confirm a new address before going back.
+TimeoutStartSec=10min

@@ -336,6 +336,8 @@ dd{margin:0;font-weight:600;word-break:break-all}
 .tools .langs button{padding:0 .75rem}
 .tools .langs button.on{background:var(--brand);color:var(--brand-ink);border-color:var(--brand)}
 .notice{background:var(--tint);border-radius:10px;padding:.7rem .9rem;margin:0 0 1rem}
+.netnow{display:grid;grid-template-columns:max-content 1fr;gap:.35rem 1rem;margin:0 0 .5rem;font-size:.9375rem}.netnow dt{color:var(--muted)}.netnow dd{margin:0;overflow-wrap:anywhere}
+.netchecks{list-style:none;padding:0;margin:.5rem 0 0}.netok{color:var(--ok);font-weight:700}.netno{color:var(--error);font-weight:700}
 .capture.reuse > span:not(.reuse-txt),.capture.reuse > small{display:none}
 .capture .reuse-txt{font-weight:600}.capture .reuse-txt small{display:block;font-weight:400;margin-top:.25rem}
 .sheet{position:fixed;inset:0;background:rgba(4,12,12,.6);display:none;z-index:30;align-items:center;justify-content:center;padding:16px}
@@ -1641,6 +1643,7 @@ function renderAdmin(d){
       ${d.kiosk.backendUrl ? "" : `<div class="field"><label>Admin password (this device only)</label><input type="password" data-k="kiosk.pin" autocomplete="new-password" value="${esc(String(d.kiosk.pin||"").length>=8 ? d.kiosk.pin : DEMO_DEFAULT_PW)}"><p class="hint">8 to 20 characters.</p></div>`}
     </section>
 
+    ${d.kiosk.backendUrl ? `<section class="adm-sec"><h3>Network</h3><div id="netBody"><p class="hint">Loading…</p></div></section>` : ""}
     ${d.kiosk.backendUrl ? `<section class="adm-sec"><h3>Updates</h3><div id="updBody"><p class="hint">Loading…</p></div></section>` : ""}
     ${d.kiosk.backendUrl ? `<section class="adm-sec"><h3>Audit log</h3><div id="auditBody"><p class="hint">Loading…</p></div></section>` : ""}
     ${d.kiosk.backendUrl ? `<section class="adm-sec"><h3>Users and sign-in</h3><div id="acctBody"><p class="hint">Loading…</p></div></section>` : ""}
@@ -1754,7 +1757,7 @@ async function r1Load(){
   try{ R1UI.cfg = await r1Api("GET", "/config"); }
   catch(err){ if (err.status!==401) r1Msg(err.message.includes("fetch") ? "Can't reach the kiosk server." : err.message); return; }
   r1RenderForm();
-  alertRender(); staffRender(); summaryRender(); coEndRender(); leaveRender(); hostLinkRender(); updRender();
+  alertRender(); staffRender(); summaryRender(); coEndRender(); leaveRender(); hostLinkRender(); updRender(); netRender();
   if ($("#pskIn")) $("#pskIn").placeholder = R1UI.cfg.hasPskPassword ? "Saved. Leave blank to keep it." : "";
   keepRender();
   try{
@@ -2214,6 +2217,88 @@ async function updRender(){
     try{ await r1Api("POST", "/update/rollback"); updWait(`Going back to ${u.previous.version}…`); }catch(err){ msg(err.message); }
   });
 }
+/* ---- Network (admins, on the VM): DHCP or static address, DNS, NTP. A new address must be kept within 3 minutes ---- */
+let NET_TIMER = null;
+const MASKS = Array.from({ length: 23 }, (_, i) => 30 - i).map(p => [p, [24,16,8,0].map(s => (((0xffffffff << (32 - p)) >>> 0) >>> s) & 255).join(".")]);
+async function netRender(){
+  const b = $("#netBody"); if (!b) return;
+  clearInterval(NET_TIMER);
+  let n; try{ n = await r1Api("GET", "/network"); }catch(err){ b.innerHTML = `<p class="hint">${esc(err.message)}</p>`; return; }
+  if (!n.available){ b.innerHTML = `<p class="hint">Network settings from here work on the Visitor Desk VM. This server isn't running on one.</p>`; return; }
+  const st = n.status, c = { mode:"dhcp", dns:[], search:[], ntp:[], ...(n.state?.configured || {}) }, l = n.state?.live || {};
+  const j = a => (a || []).join(", "), when = st?.at ? fmtTime(st.at) : "";
+  const tick = ok => ok ? `<span class="netok">✓</span>` : `<span class="netno">✗</span>`;
+  const checks = st?.checks ? `<ul class="netchecks"><li>${tick(st.checks.gateway)} Gateway answers</li><li>${tick(st.checks.dns)} Names resolve (DNS)</li><li>${tick(st.checks.internet)} RUCKUS One reachable</li></ul>` : "";
+  const notice = !st ? ""
+    : st.state === "waiting" ? `<div class="warn"><b>New network settings are on. Keep them?</b><br>The VM goes back to the previous settings in <b id="netLeft"></b> unless you keep them.${checks}
+        <div class="actions" style="margin:.75rem 0 0"><button class="primary" id="netKeep" style="flex:none">Keep these settings</button><button class="ghost" id="netUndo">Go back now</button></div></div>`
+    : ["queued","applying"].includes(st.state) ? `<p class="notice">Applying the new network settings (${esc(when)})…</p>`
+    : st.state === "done" ? `<p class="notice">Network settings changed ${esc(when)}${st.by ? ` by ${esc(st.by)}` : ""}.</p>${st.checks && !(st.checks.gateway && st.checks.dns && st.checks.internet) ? `<div class="warn">After that change:${checks}</div>` : ""}`
+    : st.state === "reverted" ? `<p class="warn">${esc(st.message || "Went back to the previous network settings.")} (${esc(when)})</p>`
+    : st.state === "failed" ? `<p class="warn">The network settings weren't changed (${esc(when)}): ${esc(st.message || "")}</p>` : "";
+  const v = k => esc(Array.isArray(c[k]) ? j(c[k]) : c[k] ?? "");
+  const [la, lp] = String((l.addresses || [])[0] || "").split("/");
+  const busy = ["queued","applying","waiting"].includes(st?.state);
+  b.innerHTML = `<p class="help">The VM's network adapter${n.state?.interface ? ` (${esc(n.state.interface)})` : ""}. Tablets and staff use its address, so it shouldn't change: set a static address here, or reserve one on your DHCP server.</p>
+    ${notice}
+    <dl class="netnow">
+      <dt>Address</dt><dd>${esc(j(l.addresses)) || "none"} ${c.mode === "static" ? "(static)" : "(from DHCP)"}</dd>
+      <dt>Gateway</dt><dd>${esc(l.gateway || "none")}</dd>
+      <dt>DNS servers</dt><dd>${esc(j(l.dns)) || "none"}${l.search?.length ? ` · search ${esc(j(l.search))}` : ""}</dd>
+      <dt>Time</dt><dd>${l.ntpServer ? `from ${esc(l.ntpServer)}, ` : ""}${l.ntpSynced ? "in sync" : "not in sync yet"}</dd>
+      ${n.state?.mac ? `<dt>MAC address</dt><dd class="mono">${esc(n.state.mac)}</dd>` : ""}
+    </dl>
+    <div role="radiogroup" aria-label="How the VM gets its address" style="margin:1rem 0 .5rem">
+      <label class="check"><input type="radio" name="netMode" value="dhcp"${c.mode !== "static" ? " checked" : ""}><span><b>DHCP</b>Get the address from your network.</span></label>
+      <label class="check"><input type="radio" name="netMode" value="static"${c.mode === "static" ? " checked" : ""}><span><b>Static address</b>Set the address here.</span></label>
+    </div>
+    <div id="netStatic">
+      <div class="field"><label for="netAddr">IP address</label><input type="text" id="netAddr" inputmode="decimal" spellcheck="false" placeholder="192.168.10.50" value="${c.mode === "static" ? v("address") : esc(la)}"></div>
+      <div class="field"><label for="netPrefix">Subnet mask</label><select id="netPrefix">${MASKS.map(([p, m]) => `<option value="${p}"${Number(c.prefix || lp || 24) === p ? " selected" : ""}>${m} (/${p})</option>`).join("")}</select></div>
+      <div class="field"><label for="netGw">Gateway</label><input type="text" id="netGw" inputmode="decimal" spellcheck="false" placeholder="192.168.10.1" value="${c.mode === "static" ? v("gateway") : esc(l.gateway || "")}"></div>
+    </div>
+    <div class="field"><label for="netDns">DNS servers</label><input type="text" id="netDns" spellcheck="false" placeholder="192.168.10.1, 1.1.1.1" value="${c.mode === "static" || c.dns.length ? v("dns") : ""}">
+      <p class="hint" id="netDnsHint"></p></div>
+    <div class="field"><label for="netSearch">Search domains <small class="hint">(optional)</small></label><input type="text" id="netSearch" spellcheck="false" placeholder="corp.example.com" value="${v("search")}"></div>
+    <div class="field"><label for="netNtp">Time servers (NTP) <small class="hint">(optional)</small></label><input type="text" id="netNtp" spellcheck="false" placeholder="time.example.com, pool.ntp.org" value="${v("ntp")}">
+      <p class="hint">Up to 4 names or addresses. Two-step sign-in codes need the right time. Empty: <span id="netNtpDef"></span>.</p></div>
+    <div class="actions" style="margin:.25rem 0 0"><button class="primary" id="netSave" style="flex:none"${busy ? " disabled" : ""}>Apply network settings</button></div>
+    <p class="hint">A new address, gateway or DHCP/static choice has to be kept from the new address within 3 minutes, or the VM goes back to the settings it has now. A mistake can't lock you out.</p>
+    <p class="hint" id="netMsg" aria-live="polite"></p>`;
+  const mode = () => b.querySelector('input[name="netMode"]:checked').value;
+  const sync = () => { const s = mode() === "static"; $("#netStatic").hidden = !s;
+    if (s && !$("#netDns").value.trim()) $("#netDns").value = j(l.dns);   // start from what DHCP gave
+    $("#netDnsHint").textContent = s ? "Up to 3, separated by commas." : "Optional. Empty: the DNS servers from DHCP. Up to 3, separated by commas.";
+    $("#netNtpDef").textContent = s ? "ntp.ubuntu.com" : "the time servers from DHCP, else ntp.ubuntu.com"; };
+  b.querySelectorAll('input[name="netMode"]').forEach(r => r.addEventListener("change", sync)); sync();
+  const msg = t => $("#netMsg").textContent = t;
+  if (st?.state === "waiting" && st.deadline){
+    const left = () => { const s = Math.max(0, Math.round((Date.parse(st.deadline) - Date.now()) / 1000));
+      if ($("#netLeft")) $("#netLeft").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+      if (!s){ clearInterval(NET_TIMER); setTimeout(netRender, 8000); } };
+    left(); NET_TIMER = setInterval(left, 1000);
+    $("#netKeep").addEventListener("click", async ()=>{ try{ await r1Api("POST", "/network/confirm"); msg("Keeping them…"); setTimeout(netRender, 2500); }catch(err){ msg(err.message); } });
+    $("#netUndo").addEventListener("click", async ()=>{ if (!confirm("Go back to the previous network settings now? The VM's address may change.")) return;
+      try{ await r1Api("POST", "/network/revert"); msg("Going back. If the address changes, open the previous one."); }catch(err){ msg(err.message); } });
+  } else if (["queued","applying"].includes(st?.state)) setTimeout(netRender, 3000);
+  $("#netSave").addEventListener("click", async ()=>{
+    const s = { mode: mode(), address: $("#netAddr").value.trim(), prefix: Number($("#netPrefix").value), gateway: $("#netGw").value.trim(),
+      dns: $("#netDns").value, search: $("#netSearch").value, ntp: $("#netNtp").value };
+    const risky = s.mode !== c.mode || (s.mode === "static" && (s.address !== c.address || s.prefix !== c.prefix || s.gateway !== c.gateway));
+    const here = location.hostname, moving = s.mode === "dhcp" || s.address !== here;
+    if (risky && !confirm(s.mode === "static"
+      ? `Change this VM to ${s.address}/${s.prefix}, gateway ${s.gateway}?\n\n${moving ? `Tablets will need to open the new address and be paired again.\n\n` : ""}${moving ? `Then open https://${s.address}/ within 3 minutes, sign in, and tap "Keep these settings" under Network.` : `Then tap "Keep these settings" within 3 minutes.`} Otherwise it goes back by itself.`
+      : `Switch this VM to DHCP?\n\nIts address may change. Find the new one on the VM console, open it within 3 minutes, sign in, and tap "Keep these settings" under Network. Otherwise it goes back by itself.`)) return;
+    try{
+      await r1Api("PUT", "/network", s);
+      if (risky && moving){
+        b.innerHTML = s.mode === "static"
+          ? `<div class="notice"><b>Applying the new address.</b><br>In a few seconds, open <a href="https://${esc(s.address)}/" target="_blank" rel="noopener">https://${esc(s.address)}/</a>, sign in, and go to <b>Network</b> to keep the new settings. You have 3 minutes; after that the VM goes back to ${esc(here)}.</div>`
+          : `<div class="notice"><b>Switching to DHCP.</b><br>Find the new address on the VM console (or your DHCP server), open it, sign in, and go to <b>Network</b> within 3 minutes to keep it. Otherwise the VM goes back to ${esc(here)}.</div>`;
+      } else { msg("Applying…"); setTimeout(netRender, 2500); }
+    }catch(err){ msg(err.message); }
+  });
+}
 // The server restarts during the install, which also ends this sign-in: wait for it to go away and come back.
 async function updWait(text){
   const b = $("#updBody"); b.innerHTML = `<p class="notice" id="updProg">${esc(text)} Don't close this page.</p>`;
@@ -2641,12 +2726,20 @@ const HELP = [
       <li>Check the version shown, then <b>Install now</b>. The kiosk server restarts; visitors can't check in for about a minute.</li>
       <li>Sign in again. <b>Updates</b> shows what was installed, with the log.</li></ol>
     <p>If the new version doesn't start, it goes back to the old one by itself. <b>Go back to …</b> returns to the version before the last update. Settings, users and visitor records are always kept.</p>` },
+  { id:"network", title:"Network: address, DNS and time servers", who:"admin", body:`
+    <p>On the Visitor Desk VM, <b>Network</b> (under System) shows the VM's address, gateway, DNS servers and time, and changes them.</p>
+    <ul><li><b>DHCP</b> or a <b>Static address</b> (IP address, subnet mask, gateway). Tablets and staff use this address, so it shouldn't change: use a static address, or reserve one on your DHCP server.</li>
+      <li><b>DNS servers</b> (up to 3) and <b>search domains</b>. With DHCP, leave DNS empty to use the ones from DHCP.</li>
+      <li><b>Time servers (NTP)</b>, up to 4. Two-step sign-in codes need the right time. Empty: the ones from DHCP, else ntp.ubuntu.com.</li></ul>
+    <p>Changing the address, gateway or DHCP/static has a safety net: open the new address within 3 minutes, sign in and tap <b>Keep these settings</b>. Otherwise the VM goes back to the previous settings by itself, so a mistake can't lock you out. The panel also shows whether the gateway answers, names resolve and RUCKUS One can be reached. DNS and time server changes apply straight away.</p>
+    <p>After a new address, each tablet has to open it (and be added to the home screen again) and be <b>paired again</b> under Kiosk tablets: a browser keeps the pairing and the kiosk settings per address. The look shared with "Use this look on every kiosk" comes back by itself; other kiosk settings need setting again. The certificate follows the address, so it doesn't need installing again.</p>
+    <p>On the console: <code>kiosk network</code> and <code>kiosk ntp</code>.</p>` },
   { id:"vm", title:"The VM: updates, backups, firewall", who:"admin", body:`
     <p>Sign in on the VM console (or SSH) as <b>kioskadmin</b> and type <code>kiosk</code> for the commands:</p>
     <ul><li><code>kiosk update &lt;file or URL&gt;</code> installs a signed update (or use <b>Updates</b> in the admin panel); <code>kiosk rollback</code> goes back. <code>kiosk version</code> shows what's installed.</li>
       <li><code>kiosk backup</code> makes an encrypted backup (settings, users, visits, certificates); <code>kiosk restore &lt;file&gt;</code> puts it back.</li>
       <li><code>kiosk firewall</code> shows the rules (web from anywhere, SSH from private networks only).</li>
-      <li><code>kiosk reset-admin</code> if every admin is locked out; <code>kiosk network</code> for a static address.</li></ul>` }
+      <li><code>kiosk reset-admin</code> if every admin is locked out; <code>kiosk network</code> for DHCP, a static address or DNS servers; <code>kiosk ntp</code> for time servers.</li></ul>` }
 ];
 const HELP_UI = { q:"", id:null };
 function openHelp(id){
@@ -3273,7 +3366,7 @@ const ADMIN_GROUPS = [
   ["Messages", ["Email and text messages","Staff alerts","Summary email"]],
   ["Wi-Fi and RUCKUS One", ["RUCKUS One connection","Wi-Fi access type"]],
   ["Security and privacy", ["Users and sign-in","Kiosk tablets","Privacy","Audit log"]],
-  ["System", ["Updates"]]
+  ["System", ["Network", "Updates"]]
 ];
 function buildAdminNav(){
   const box = $("#adminBody"), all = [...box.querySelectorAll(".adm-sec")], anchor = $("#admErr");

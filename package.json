@@ -1,6 +1,6 @@
 {
   "name": "visitor-desk",
-  "version": "1.8.1",
+  "version": "1.9.0",
   "description": "Visitor Desk: visitor check-in kiosk that creates Wi-Fi access in RUCKUS One",
   "main": "server.js",
   "private": true,

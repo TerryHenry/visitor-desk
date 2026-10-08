@@ -395,6 +395,22 @@ API reference: https://docs.ruckus.cloud/api/
   signed with the real key).
 
 
+## Network settings (1.9.0)
+- Admin → System → Network (admins only): DHCP/static (address, prefix, gateway), DNS (≤3; with DHCP optional, then
+  `use-dns: false`), search domains (≤3), NTP (≤4; DHCP gets `use-ntp: false`; /etc/systemd/timesyncd.conf.d/90-visitor-desk.conf).
+- Same hand-over as updates: `PUT /api/admin/network` writes data/system/network.request (+ status "queued");
+  `kiosk-netcfg.path` → root `/usr/local/sbin/kiosk-netcfg web` (Node script, vm/files) validates again, snapshots the
+  touched files (90-visitor-kiosk.yaml, cloud-init's netplan file, the cloud-init disable cfg, /etc/visitor-kiosk/network.json,
+  the timesyncd drop-in), writes, `netplan generate` + `apply`, runs checks (gateway ping, DNS, HTTPS to ruckus.cloud).
+  Risky changes (mode/address/prefix/gateway, `risky()`) → status "waiting" with a 180 s deadline and a visitor-kiosk
+  restart (new cert); `POST /network/confirm` writes network.confirm → "done"; timeout or `/network/revert` → snapshot
+  restored, "reverted". DNS/NTP-only changes apply at once. Status in data/system/network-status.json, current settings
+  in network-state.json (written by `kiosk-netcfg state`, run as ExecStartPre of visitor-kiosk.service).
+- `netSettings()` in server.js and `validate()` in kiosk-netcfg must stay identical; test/network.test.js compares them.
+- Console: `kiosk network` (dhcp | static ... | dns ...) and `kiosk ntp [servers|default]` call `kiosk-netcfg set key=value`
+  (applied at once, no confirm). The kiosk server only reads/writes data/system; root does everything else.
+- A new address is a new browser origin: tablets must be paired again (localStorage per origin); help/docs say so.
+
 ## Releases (GitHub, from 1.8.1)
 - Code: private repo TerryHenry/visitor-desk. Downloads: public repo TerryHenry/visitor-desk-releases (README, docs/,
   releases only; no code), created 2026-10-07 at the user's request (a release can't be public in a private repo). The

@@ -1,0 +1,9 @@
+[Unit]
+Description=Watch for network settings changed in the Visitor Desk admin panel
+
+[Path]
+PathExists=/opt/visitor-kiosk/data/system/network.request
+Unit=kiosk-netcfg.service
+
+[Install]
+WantedBy=paths.target

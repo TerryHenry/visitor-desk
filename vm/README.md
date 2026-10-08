@@ -6,7 +6,8 @@ How to build the appliance (OVA) and its signed updates. To deploy and use the V
 
 Ubuntu Server 24.04 LTS cloud image with Visitor Desk in `/opt/visitor-kiosk`, Node.js 24 in `/opt/node`, the
 `visitor-kiosk` service (ports 80 and 443), the `kiosk` maintenance command, a console banner with the address and
-setup code, the ufw firewall and the update installer. Only the app files are copied in: never `config.json`,
+setup code, the ufw firewall, the update installer and the network settings helper (`kiosk-netcfg`, used by the
+admin panel's Network section and by `kiosk network` / `kiosk ntp`). Only the app files are copied in: never `config.json`,
 `data/`, `certs/` or other local files.
 
 ## Build the OVA

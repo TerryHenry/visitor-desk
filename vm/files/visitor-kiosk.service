@@ -11,9 +11,11 @@ WorkingDirectory=/opt/visitor-kiosk
 Environment=PORT=80 HTTPS_PORT=443
 # Firewall (once; see /usr/local/sbin/kiosk-harden). Runs as root; a failure doesn't stop the kiosk.
 ExecStartPre=-+/usr/local/sbin/kiosk-harden
-# Updates from the admin panel (1.8.0): make sure the watcher is on (an update from an older version brings it).
+# Updates (1.8.0) and network settings (1.9.0) from the admin panel: make sure the watchers are on (an update from an
+# older version brings them), and write the current network settings for the panel.
 # (data/ may not exist yet on a new VM: it must still belong to the kiosk user, or the server can't write its records.)
-ExecStartPre=-+/bin/sh -c 'mkdir -p /opt/visitor-kiosk/data/updates && chown kiosk:kiosk /opt/visitor-kiosk/data /opt/visitor-kiosk/data/updates && systemctl enable --now --no-block kiosk-web-update.path'
+ExecStartPre=-+/bin/sh -c 'mkdir -p /opt/visitor-kiosk/data/updates /opt/visitor-kiosk/data/system && chown kiosk:kiosk /opt/visitor-kiosk/data /opt/visitor-kiosk/data/updates /opt/visitor-kiosk/data/system && systemctl enable --now --no-block kiosk-web-update.path kiosk-netcfg.path'
+ExecStartPre=-+/usr/local/sbin/kiosk-netcfg state
 
 ExecStart=/opt/node/bin/node server.js
 Restart=always
