@@ -61,13 +61,18 @@ Tabs: **Visits** (everyone who checked in), **Expected visitors**, **Blocked**, 
 - **A visit** shows the details, photo, ID image, signature and devices. From there:
   - **Check out**: marks them as gone and ends their Wi-Fi (unless an admin turned that off).
   - **End Wi-Fi access**: their guest pass or personal password is deleted in RUCKUS One, and their devices that are
-    still on the Wi-Fi are disconnected, so they can't get back on. The visit shows how many were disconnected.
+    still on the Wi-Fi are disconnected, so they can't get back on. The visit shows how many were disconnected. (For
+    DPSK, the identity RUCKUS One keeps for the password is removed too.)
     A shared password can't be ended for one person.
   - **Block this visitor**: they can't check in again with the same name, email or phone, and staff are alerted if
-    they try. **Also end their Wi-Fi access now** (ticked) ends their access as above. Unblock them under the
-    **Blocked** tab. The block list is Visitor Desk's own: RUCKUS One doesn't show these people as blocked.
+    they try. **Also end their Wi-Fi access now** (ticked) ends their access and disconnects their devices. For a
+    personal password (DPSK) visitor, their identity is blocked in RUCKUS One instead of their password being deleted,
+    so they show as **Blocked** under **Clients > Identities**, where a property manager can see it and undo it.
+    Unblock them under the **Blocked** tab: their identity is unblocked too, and their Wi-Fi works again if their pass
+    hasn't run out. (Guest pass visitors aren't identities in RUCKUS One: their pass is deleted.)
   - **Disconnect their devices** (once access has ended): disconnects their devices again, for example a phone that
-    was still connected.
+    was still connected. For a blocked DPSK visitor it also blocks their identity in RUCKUS One if that hasn't
+    happened yet.
   - Admins can also **Print badge**, **Email / Text Wi-Fi details** again (with the visitor's current password from
     RUCKUS One) and **Delete this visit**.
 

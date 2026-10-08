@@ -423,8 +423,17 @@ API reference: https://docs.ruckus.cloud/api/
   `PATCH /venues/{venueId}/aps/{serial}/clients/{mac}` {status:"DISCONNECTED"} (from the docs, as in DwellLink; NOT yet
   confirmed live). venueId from the client row or apNames(). Result in rec.lastDisconnect {at, disconnected, failed}.
   Revoke on an already-ended visit just disconnects again ("Disconnect their devices" button). Reported live
-  2026-10-08: a blocked guest's phone stayed connected after the pass was deleted. RUCKUS One has no documented
-  per-device block list API, so Visitor Desk's block list isn't visible in RUCKUS One.
+  2026-10-08: a blocked guest's phone stayed connected after the pass was deleted.
+- Identities (confirmed live 2026-10-08 on the user's tenant): every DPSK passphrase has identityId + identityGroupId
+  (in its GET and list rows); the visitor pool is linked to one identity group (GET /identityGroups → content[].dpskPoolId).
+  `PATCH /identityGroups/{g}/identities/{i}` {revoked:true} → 202, GET shows revoked (R1 "Blocked"); {revoked:false} undoes.
+  Deleting a passphrase leaves its identity behind (16 such orphans in the user's visitor group on 2026-10-08, not
+  cleaned up; ask before touching them); DELETE identity → 202.
+- Block (DPSK, with "end access") = `setIdentityBlocked(…, true)` + disconnect; the passphrase stays (rec.identityBlocked).
+  Unblock (DELETE /blocks/{id}) unblocks the identity and, if the passphrase exists and the pass hasn't expired, clears
+  revokedAt (rec.accessRestoredAt). End access / checkout for DPSK deletes the passphrase and then its identity.
+  Identity ids saved at check-in (rec.identityId/identityGroupId); older visits: `dpskIdentity()` reads the passphrase
+  or searches the group by dpskGuid. Guest pass (portal) visitors have no identity: pass deleted + disconnect.
 
 ## Releases (GitHub, from 1.8.1)
 - Code: private repo TerryHenry/visitor-desk. Downloads: public repo TerryHenry/visitor-desk-releases (README, docs/,

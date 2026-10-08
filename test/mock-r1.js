@@ -5,7 +5,7 @@
 const fs = require("fs");
 const LOG = process.env.MOCK_LOG, STATE = process.env.MOCK_STATE;
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");
-const passphrases = [];
+const passphrases = [], identities = [];   // every DPSK passphrase has an identity in group g1 (as live)
 let guestN = 0;
 const json = (b, status = 200) => new Response(JSON.stringify(b), { status, headers: { "Content-Type": "application/json" } });
 const log = entry => { if (LOG) fs.appendFileSync(LOG, JSON.stringify(entry) + "\n"); };
@@ -39,16 +39,33 @@ globalThis.fetch = async (url, opts = {}) => {
   if (pp && m === "POST") {
     const b = JSON.parse(body);
     if (b.username || b.email || b.phoneNumber) return json({ message: "extra fields on create" }, 500);   // like the real one
-    passphrases.push({ id: "p" + passphrases.length, ...b }); return json({ requestId: "r1" }, 202);
+    const n = passphrases.length; passphrases.push({ id: "p" + n, ...b, identityId: "i" + n, identityGroupId: "g1" });
+    identities.push({ id: "i" + n, groupId: "g1", dpskGuid: "p" + n, revoked: false }); return json({ requestId: "r1" }, 202);
   }
   if (pp && m === "GET" && pp[2]) return json(passphrases.find(x => x.id === pp[2]) || {}, passphrases.some(x => x.id === pp[2]) ? 200 : 404);
   if (pp && m === "GET") return json({ content: passphrases });
   if (pp && m === "PATCH") { Object.assign(passphrases.find(x => x.id === pp[2]) || {}, JSON.parse(body)); return json({ requestId: "r2" }, 202); }
-  if (pp && m === "DELETE") return Array.isArray(JSON.parse(body || "null")) ? json({ requestId: "rd" }, 202) : json({ message: "Malformed JSON request" }, 400);
+  if (pp && m === "DELETE") {
+    const ids = JSON.parse(body || "null");
+    if (!Array.isArray(ids)) return json({ message: "Malformed JSON request" }, 400);
+    for (const id of ids) { const i = passphrases.findIndex(x => x.id === id); if (i >= 0) passphrases.splice(i, 1); }   // its identity stays (as live)
+    return json({ requestId: "rd" }, 202);
+  }
   const gu = p.match(/^\/wifiNetworks\/(\w+)\/guestUsers(?:\/(\w+))?$/);
   if (gu && m === "POST") return json({ response: { id: "g" + ++guestN, password: "123456", ssid: "Acme-Guest" } }, 201);
   if (gu && m === "GET") return json({ response: { id: gu[2], ssid: "Acme-Guest", expirationDate: Date.now() + 8 * 3600e3, macAddresses: st.guestMacs || [] } });
   if (gu && m === "DELETE") return json({ requestId: "rd" });
+  // Identities (live-confirmed shapes, 2026-10-08): the visitor pool d1 is linked to identity group g1.
+  if (p === "/identityGroups" && m === "GET") return json({ content: [{ id: "g1", name: "Visitors", dpskPoolId: "d1" }] });
+  const idm = p.match(/^\/identityGroups\/g1\/identities(?:\/(\w+))?$/);
+  if (idm && m === "GET" && !idm[1]) return json({ content: identities });
+  if (idm && idm[1]) {
+    const it = identities.find(x => x.id === idm[1]);
+    if (!it) return json({ message: "not found" }, 404);
+    if (m === "GET") return json(it);
+    if (m === "PATCH") { Object.assign(it, JSON.parse(body)); return json({ requestId: "ip" }, 202); }
+    if (m === "DELETE") { identities.splice(identities.indexOf(it), 1); return json({ requestId: "id" }, 202); }
+  }
   // "Patch AP Client": disconnect a client from the AP it's on (the call Visitor Desk makes when access ends).
   if (m === "PATCH" && /^\/venues\/\w+\/aps\/\w+\/clients\/[^/]+$/.test(p)) return JSON.parse(body || "{}").status === "DISCONNECTED" ? json({ requestId: "kick" }, 202) : json({ message: "bad status" }, 400);
   if (p === "/venues/aps/clients/query") { const c = st.clients || []; return json({ data: c, totalCount: c.length, page: 1 }); }

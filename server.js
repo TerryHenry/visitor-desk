@@ -363,7 +363,8 @@ async function createDpsk(v, net, delivery = {}) {
   const delivered = patched
     ? await sendDpskNotice(base, d.poolId, rec.id, { email: !!(delivery.email && v.email), sms: !!(delivery.sms && phoneNumber) })
     : { email: false, sms: false };
-  return { ssid: net.ssid, password, expiresAt: net.expiresAt, ruckusId: rec.id, ruckusUsername: username, delivered };
+  return { ssid: net.ssid, password, expiresAt: net.expiresAt, ruckusId: rec.id, ruckusUsername: username, delivered,
+    identityId: rec.identityId || undefined, identityGroupId: rec.identityGroupId || undefined };
 }
 
 // When the chosen RUCKUS One network is a shared-password (psk) network, its password and SSID are read from
@@ -537,6 +538,9 @@ function saveVisit(v, result, mode, retentionDays) {
     photo: writeImg(v.photo, "photo.jpg"),
     idImage: cfg.storage?.storeIdImages === false ? (v.idImage ? "checked, not stored" : null) : writeImg(v.idImage, "id.jpg"),
     ruckusUsername: result.ruckusUsername || undefined,
+    // The RUCKUS One identity behind a DPSK passphrase (every passphrase has one; confirmed live 2026-10-08): blocking
+    // it shows the visitor as Blocked under Clients > Identities.
+    identityId: result.identityId, identityGroupId: result.identityGroupId,
     // RUCKUS One gives a guest pass code out only once, at creation, so it's kept here for reprinting / resending.
     // Removed when the pass expires or access is ended; never sent to the visitor records screen or the export.
     passCode: mode === "portal" ? result.password || undefined : undefined,
@@ -1388,16 +1392,68 @@ async function disconnectDevices(macs) {
   }
   return out;
 }
-async function revokeAccess(rec) {
-  if (rec.revokedAt) { if (rec.ruckusId) rec.lastDisconnect = { at: new Date().toISOString(), ...await disconnectDevices(await visitMacs(rec)) }; return "already"; }
+// The RUCKUS One identity of a DPSK visit: saved at check-in (since 1.9.0), else read from the passphrase, else (the
+// passphrase was deleted; its identity stays behind, confirmed live 2026-10-08) found in the pool's identity group by dpskGuid.
+async function dpskIdentity(rec) {
+  if (rec.identityId && rec.identityGroupId) return { groupId: rec.identityGroupId, id: rec.identityId };
+  const pool = rec.dpskPoolId || cfg.dpsk?.poolId;
+  try {
+    const pp = await r1("GET", `/dpskServices/${encodeURIComponent(pool)}/passphrases/${encodeURIComponent(rec.ruckusId)}`);
+    if (pp?.identityId && pp?.identityGroupId) return { groupId: pp.identityGroupId, id: pp.identityId };
+  } catch {}
+  const group = listOf(await r1("GET", "/identityGroups?page=0&size=100")).find(g => g.dpskPoolId === pool);
+  if (!group) return null;
+  for (let page = 0; page < 10; page++) {
+    const rows = listOf(await r1("GET", `/identityGroups/${encodeURIComponent(group.id)}/identities?page=${page}&size=500`));
+    const hit = rows.find(i => i.dpskGuid === rec.ruckusId);
+    if (hit) return { groupId: group.id, id: hit.id };
+    if (rows.length < 500) break;
+  }
+  return null;
+}
+// Block or unblock an identity: PATCH {revoked} (confirmed live 2026-10-08: 202, then GET shows revoked; RUCKUS One's
+// Identities list shows "Blocked"). A blocked identity's passphrase can't connect.
+const setIdentityBlocked = (ident, revoked) =>
+  r1("PATCH", `/identityGroups/${encodeURIComponent(ident.groupId)}/identities/${encodeURIComponent(ident.id)}`, { revoked });
+
+// End a visitor's Wi-Fi. block: for DPSK, block their RUCKUS One identity (visible there, and the property manager can
+// undo it) instead of deleting the passphrase. Otherwise the pass is deleted (and a DPSK passphrase's identity, which
+// RUCKUS One would leave behind). Either way their devices still on the Wi-Fi are disconnected.
+async function revokeAccess(rec, { block = false } = {}) {
+  const now = () => new Date().toISOString();
+  if (rec.revokedAt) {
+    if (!rec.ruckusId) return "already";
+    const macs = await visitMacs(rec);
+    if (block && rec.mode === "dpsk" && !rec.identityBlocked) {   // ended earlier: block the identity that was left behind
+      try { const ident = await dpskIdentity(rec); if (ident) { await setIdentityBlocked(ident, true); rec.identityBlocked = { ...ident, at: now() }; } }
+      catch (e) { recordProblem("Ending Wi-Fi access", `Couldn't block the RUCKUS One identity of ${rec.name}: ${e.message}`); }
+    }
+    rec.lastDisconnect = { at: now(), ...await disconnectDevices(macs) };
+    return "already";
+  }
   if (!rec.ruckusId) throw new Error(rec.mode === "psk" ? "Everyone shares this Wi-Fi password, so one visitor's access can't be ended. Change the network password in RUCKUS One instead." : "This visit has no RUCKUS One pass to end.");
   const macs = await visitMacs(rec);
+  if (rec.mode === "dpsk") {
+    let ident = null;
+    try { ident = await dpskIdentity(rec); } catch (e) { recordProblem("Ending Wi-Fi access", `Couldn't find the RUCKUS One identity of ${rec.name}: ${e.message}`); }
+    if (block && ident) {
+      try {
+        await setIdentityBlocked(ident, true);
+        rec.identityBlocked = { ...ident, at: now() };
+        rec.lastDisconnect = { at: now(), ...await disconnectDevices(macs) };
+        return "ended";
+      } catch (e) { recordProblem("Ending Wi-Fi access", `Couldn't block the RUCKUS One identity of ${rec.name}, so the password is deleted instead: ${e.message}`); }
+    }
+    const pool = rec.dpskPoolId || cfg.dpsk?.poolId;
+    await r1("DELETE", `/dpskServices/${encodeURIComponent(pool)}/passphrases`, [rec.ruckusId]);   // plain array of ids
+    if (ident) await r1("DELETE", `/identityGroups/${encodeURIComponent(ident.groupId)}/identities/${encodeURIComponent(ident.id)}`)
+      .catch(e => recordProblem("Ending Wi-Fi access", `Couldn't remove the RUCKUS One identity of ${rec.name}: ${e.message}`, true));
+    rec.lastDisconnect = { at: now(), ...await disconnectDevices(macs) };
+    return "ended";
+  }
   if (rec.mode === "portal") {
     const net = rec.wifiNetworkId || cfg.guestPass?.wifiNetworkId;
     await r1("DELETE", `/wifiNetworks/${encodeURIComponent(net)}/guestUsers/${encodeURIComponent(rec.ruckusId)}`);
-  } else if (rec.mode === "dpsk") {
-    const pool = rec.dpskPoolId || cfg.dpsk?.poolId;
-    await r1("DELETE", `/dpskServices/${encodeURIComponent(pool)}/passphrases`, [rec.ruckusId]);   // plain array of ids
   } else throw new Error("This visit has no RUCKUS One pass to end.");
   rec.lastDisconnect = { at: new Date().toISOString(), ...await disconnectDevices(macs) };
   return "ended";
@@ -1526,7 +1582,7 @@ async function handleAdmin(req, res, url) {
     const b = await readBody(req, 4096), rec = readVisit(act[1]), who = session.user.name;
     let ended = null;
     if (act[2] === "revoke" || b.revoke) {
-      try { ended = await revokeAccess(rec); }
+      try { ended = await revokeAccess(rec, { block: act[2] === "block" || (!!rec.blockedAt && !rec.unblockedAt) }); }
       catch (e) { if (act[2] === "revoke") return send(res, 400, { error: e.message }); ended = "not ended: " + e.message; }
       const kicked = rec.lastDisconnect ? `; ${rec.lastDisconnect.disconnected} device(s) disconnected${rec.lastDisconnect.failed ? `, ${rec.lastDisconnect.failed} couldn't be` : ""}` : "";
       if (ended === "ended") { rec.revokedAt = new Date().toISOString(); rec.revokedBy = who; delete rec.passCode; console.log(`Wi-Fi access for ${rec.name} ended by "${who}"${kicked}.`); audit(req, who, "Ended Wi-Fi access", `${rec.name} (${rec.id})${kicked}`); }
@@ -1788,7 +1844,19 @@ async function handleAdmin(req, res, url) {
     if (gone){
       console.log(`${gone.displayName || gone.name} unblocked by "${session.user.name}".`); audit(req, session.user.name, "Unblocked a visitor", gone.displayName || gone.name);
       if (gone.visitId && VISIT_ID.test(gone.visitId) && fs.existsSync(visitFile(gone.visitId))) {
-        const rec = readVisit(gone.visitId); rec.unblockedAt = new Date().toISOString(); rec.unblockedBy = session.user.name; writeVisit(rec);
+        const rec = readVisit(gone.visitId); rec.unblockedAt = new Date().toISOString(); rec.unblockedBy = session.user.name;
+        // Blocked in RUCKUS One too: unblock the identity. If the password still exists and hasn't run out, their Wi-Fi works again.
+        if (rec.identityBlocked) {
+          try {
+            await setIdentityBlocked(rec.identityBlocked, false); delete rec.identityBlocked;
+            if (rec.revokedAt && new Date(rec.passExpiresAt || 0) > new Date()) {
+              const pool = rec.dpskPoolId || cfg.dpsk?.poolId;
+              const still = await r1("GET", `/dpskServices/${encodeURIComponent(pool)}/passphrases/${encodeURIComponent(rec.ruckusId)}`).then(() => true, () => false);
+              if (still) { delete rec.revokedAt; delete rec.revokedBy; rec.accessRestoredAt = rec.unblockedAt; }
+            }
+          } catch (e) { recordProblem("Unblocking", `Couldn't unblock the RUCKUS One identity of ${rec.name}: ${e.message}`); }
+        }
+        writeVisit(rec);
       }
     }
     return send(res, 200, readBlocks());

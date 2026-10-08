@@ -135,8 +135,14 @@ test("ending access also disconnects the visitor's devices that are still on the
   const v = await visitOf("Kick Me");
   s.setState({ dpskDevices: [{ mac: "AA:BB:CC:00:00:09" }, { mac: "AA:BB:CC:00:00:0A" }],   // the second one isn't connected
     clients: [{ macAddress: "AA:BB:CC:00:00:09", hostname: "Kick-Phone", apInformation: { name: "Lobby AP", macAddress: "11:11:11:00:00:02", serialNumber: "S2" } }] });
+  const deletes = () => s.calls().filter(c => c.method === "DELETE" && /passphrases$/.test(c.path)).length, before = deletes();
   const r = await s.api("POST", `/api/admin/visits/${v.id}/block`, { reason: "test", revoke: true }, admin);
   assert.equal(r.status, 200); assert.equal(r.body.ended, "ended");
+  // DPSK: the visitor's RUCKUS One identity is blocked (shows as Blocked there); the password isn't deleted.
+  const blockCall = s.calls().find(c => c.method === "PATCH" && /^\/identityGroups\/g1\/identities\/i\d+$/.test(c.path));
+  assert.deepEqual(JSON.parse(blockCall.body), { revoked: true });
+  assert.ok(r.body.record.identityBlocked, "recorded on the visit");
+  assert.equal(deletes(), before, "no password deleted");
   assert.deepEqual(plain(r.body.record.lastDisconnect && { d: r.body.record.lastDisconnect.disconnected, f: r.body.record.lastDisconnect.failed }), { d: 1, f: 0 });
   const kicks = () => s.calls().filter(c => c.method === "PATCH" && /\/clients\//.test(c.path));
   assert.equal(kicks().length, 1);
@@ -146,7 +152,23 @@ test("ending access also disconnects the visitor's devices that are still on the
   assert.equal(again.status, 200); assert.equal(again.body.ended, "already"); assert.equal(kicks().length, 2);
   const audit = (await s.api("GET", "/api/admin/audit?q=Kick", undefined, admin)).body.map(a => a.action + ": " + a.detail);
   assert.ok(audit.some(a => /Ended Wi-Fi access: .*1 device\(s\) disconnected/.test(a)), audit.join("\n"));
+  // Unblocking in Visitor Desk unblocks the identity too; the pass is still valid, so their Wi-Fi works again.
+  const block = (await s.api("GET", "/api/admin/blocks", undefined, admin)).body.find(b => b.visitId === v.id);
+  assert.equal((await s.api("DELETE", `/api/admin/blocks/${block.id}`, undefined, admin)).status, 200);
+  const unblock = s.calls().filter(c => c.method === "PATCH" && /\/identities\//.test(c.path)).pop();
+  assert.deepEqual(JSON.parse(unblock.body), { revoked: false });
+  const after = await visitOf("Kick Me");
+  assert.equal(after.revokedAt, undefined); assert.ok(after.accessRestoredAt); assert.equal(after.identityBlocked, undefined);
   s.setState({});
+});
+
+test("ending a DPSK visitor's access deletes the password and the identity RUCKUS One would leave behind", async () => {
+  const ci = await checkin(s, { name: "End Me", mode: "dpsk", visitor: { email: "end@visitor.example", phone: "727-555-0198" } });
+  assert.equal(ci.status, 200);
+  const v = await visitOf("End Me");
+  assert.ok(v.identityId && v.identityGroupId, "identity saved at check-in");
+  assert.equal((await s.api("POST", `/api/admin/visits/${v.id}/revoke`, undefined, admin)).status, 200);
+  assert.ok(s.calls().some(c => c.method === "DELETE" && c.path === `/identityGroups/g1/identities/${v.identityId}`));
 });
 
 test("records keep a check-out code only while on site; CSV neutralises formulas", async () => {

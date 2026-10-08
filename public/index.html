@@ -2675,8 +2675,8 @@ const HELP = [
   { id:"visit", title:"A visit: details, Wi-Fi, blocking", who:"all", body:`
     <p>Tap a visit in <b>Visitor records</b> to see their details, photo, license scan, signature and devices.</p>
     <ul><li><b>End Wi-Fi access</b>: their guest pass or personal password is deleted in RUCKUS One, and their devices that are still on the Wi-Fi are disconnected, so they can't get back on. (A shared password can't be ended for one person.)</li>
-      <li><b>Block this visitor</b>: they can't check in again with the same name, email or phone, and (ticked by default) their Wi-Fi access ends as above. Staff are alerted if they try. Unblock them under the <b>Blocked</b> tab. The block list is Visitor Desk's own: RUCKUS One doesn't show these people as blocked.</li>
-      <li><b>Disconnect their devices</b> (after access has ended): disconnects their devices again, for example a phone that was still connected.</li>
+      <li><b>Block this visitor</b>: they can't check in again with the same name, email or phone, and (ticked by default) their Wi-Fi access ends and their devices are disconnected. For a personal password (DPSK) visitor, their identity is blocked in RUCKUS One, so it shows as Blocked under Clients &gt; Identities and can be undone there too. Staff are alerted if they try to check in. Unblock them under the <b>Blocked</b> tab: their identity is unblocked as well, and their Wi-Fi works again if their pass hasn't run out.</li>
+      <li><b>Disconnect their devices</b> (after access has ended): disconnects their devices again, for example a phone that was still connected. For a blocked DPSK visitor it also blocks their RUCKUS One identity if that hasn't happened yet.</li>
       <li>Admins can also <b>Print badge</b>, <b>Email/Text Wi-Fi details</b> again, and <b>Delete this visit</b>.</li></ul>` },
   { id:"reports", title:"Reports (CSV and PDF)", who:"all", body:`
     <p>In <b>Visitor records</b>, pick what you want (search, <b>24 hours</b> / <b>7 days</b> / <b>30 days</b>, dates, or <b>On site now</b>), then <b>Export CSV</b> for a spreadsheet or <b>Export PDF</b> for a printable report. Times are in this device's time zone. Exports are recorded in the audit log.</p>` },
@@ -3040,6 +3040,8 @@ async function toggleVisit(btn){
     ${r.status === "blocked" ? `<p class="warn">This person is on the blocked list. They tried to check in and weren't given Wi-Fi.</p>` : ""}
     ${(r.resent||[]).map(x=>`<p class="help">Wi-Fi details ${x.channel === "email" ? "emailed" : "texted"} to ${esc(x.to)} ${esc(fmtTime(x.at))} by ${esc(x.by)}.</p>`).join("")}
     ${r.revokedAt ? `<p class="help">Wi-Fi access ended ${esc(fmtTime(r.revokedAt))} by ${esc(r.revokedBy||"")}.</p>` : ""}
+    ${r.identityBlocked ? `<p class="help">Blocked in RUCKUS One too: their identity shows as Blocked under Clients &gt; Identities. Unblocking them here unblocks it there.</p>` : ""}
+    ${r.accessRestoredAt ? `<p class="help">Wi-Fi access back on ${esc(fmtTime(r.accessRestoredAt))}, when they were unblocked (until their pass runs out).</p>` : ""}
     ${r.lastDisconnect ? `<p class="${r.lastDisconnect.failed ? "warn" : "help"}">${r.lastDisconnect.disconnected ? `${r.lastDisconnect.disconnected} device${r.lastDisconnect.disconnected === 1 ? "" : "s"} disconnected from the Wi-Fi` : "No devices were connected"} ${esc(fmtTime(r.lastDisconnect.at))}.${r.lastDisconnect.failed ? ` ${r.lastDisconnect.failed} couldn't be disconnected (see Recent problems); without the pass they can't connect again once they leave the Wi-Fi.` : ""}</p>` : ""}
     ${r.blockedAt ? `<p class="help">Blocked ${esc(fmtTime(r.blockedAt))} by ${esc(r.blockedBy||"")}.${r.unblockedAt ? ` Unblocked ${esc(fmtTime(r.unblockedAt))} by ${esc(r.unblockedBy||"")}.` : ""}</p>` : ""}
     <div class="actions" style="margin-top:.5rem">
