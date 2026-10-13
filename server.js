@@ -57,6 +57,7 @@ console.error = (...args) => { printError(...args); try { recordProblem("Server"
 const KIOSK_HTML = path.join(ROOT, "public", "index.html");
 const CERT_DIR = path.join(ROOT, "certs");
 const LOOK_PATH = path.join(ROOT, "shared-look.json");   // look used by every kiosk, when turned on
+const QUESTIONS_PATH = path.join(ROOT, "shared-questions.json");   // "What visitors fill in" for every kiosk, when turned on
 
 // config.json is optional at first start: the RUCKUS One connection can be set up from the kiosk admin panel.
 let cfg = {};
@@ -1124,6 +1125,34 @@ function cleanLook(b) {
   };
 }
 
+/* ---------------- Shared questions ("What visitors fill in" on every kiosk) ---------------- */
+let questionsCache = { mtime: -1, value: null };
+function readSharedQuestions() {
+  try {
+    const m = fs.statSync(QUESTIONS_PATH).mtimeMs;
+    if (m !== questionsCache.mtime) questionsCache = { mtime: m, value: JSON.parse(fs.readFileSync(QUESTIONS_PATH, "utf8")) };
+    return questionsCache.value;
+  } catch { return null; }
+}
+// Only known settings, in the shapes the kiosk page uses (fields, custom, fieldOrder, hostMode, reasons).
+const BUILTIN_FIELDS = ["name", "email", "phone", "company", "host", "purpose", "photo", "idScan", "signature"];
+const CUSTOM_KEY = /^c_[a-z0-9]{4,12}$/, CUSTOM_TYPES = ["text", "longtext", "number", "date", "choice", "checkbox"];
+function cleanQuestions(b = {}) {
+  const str = (v, n) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, n);
+  const custom = (Array.isArray(b.custom) ? b.custom : []).filter(c => c && CUSTOM_KEY.test(c.key) && CUSTOM_TYPES.includes(c.type) && str(c.label, 80))
+    .slice(0, 20).map(c => ({ key: c.key, label: str(c.label, 80), type: c.type, step: c.step === "visit" ? "visit" : "you",
+      choices: c.type === "choice" && Array.isArray(c.choices) ? [...new Set(c.choices.map(x => str(x, 80)).filter(Boolean))].slice(0, 30) : [] }))
+    .filter(c => c.type !== "choice" || c.choices.length >= 2);
+  const known = new Set([...BUILTIN_FIELDS, ...custom.map(c => c.key)]), fields = {};
+  for (const [k, v] of Object.entries(b.fields && typeof b.fields === "object" ? b.fields : {}))
+    if (known.has(k) && ["required", "optional", "hidden"].includes(v)) fields[k] = v;
+  fields.name = "required";   // always asked
+  return { fields, custom,
+    fieldOrder: [...new Set((Array.isArray(b.fieldOrder) ? b.fieldOrder : []).filter(k => known.has(k)))],
+    hostMode: b.hostMode === "list" ? "list" : "suggest",
+    reasons: (Array.isArray(b.reasons) ? b.reasons : []).map(x => str(x, 80)).filter(Boolean).slice(0, 30) };
+}
+
 /* ---------------- Sign-in: named users, roles, optional 2FA ---------------- */
 // Users live in config.json (security.users): { id, name, role, salt, hash, totp }. Passwords are 8-20 characters,
 // stored as scrypt hashes. 2FA is TOTP (RFC 6238: 30-second steps, 6 digits, SHA-1), per user.
@@ -1909,6 +1938,18 @@ async function handleAdmin(req, res, url) {
     console.log("Saved the shared kiosk look. Other kiosks pick it up within 2 minutes."); audit(req, session.user.name, "Changed the shared kiosk look");
     return send(res, 200, { version: shared.version });
   }
+  if (p === "/questions" && req.method === "PUT") {
+    const shared = { ...cleanQuestions(await readBody(req, 256 * 1024)), version: Date.now() };
+    const tmp = QUESTIONS_PATH + ".tmp";
+    fs.writeFileSync(tmp, JSON.stringify(shared)); fs.renameSync(tmp, QUESTIONS_PATH);
+    console.log("Saved the shared visitor questions. Other kiosks pick them up within 2 minutes."); audit(req, session.user.name, "Changed the shared visitor questions", `${shared.custom.length} extra question(s)`);
+    return send(res, 200, { version: shared.version });
+  }
+  if (p === "/questions" && req.method === "DELETE") {
+    fs.rmSync(QUESTIONS_PATH, { force: true });
+    console.log("Turned off the shared visitor questions. Each kiosk keeps its current questions."); audit(req, session.user.name, "Turned off the shared visitor questions");
+    return send(res, 200, { ok: true });
+  }
   if (p === "/look" && req.method === "DELETE") {
     fs.rmSync(LOOK_PATH, { force: true });
     console.log("Turned off the shared kiosk look. Each kiosk keeps its current look."); audit(req, session.user.name, "Turned off the shared kiosk look");
@@ -2346,7 +2387,8 @@ async function handle(req, res) {
 
     if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) return kioskPage(res);
     if (req.method === "GET" && url.pathname === "/api/kiosk-info") return send(res, 200, { recordDays: retention().recordDays });
-    if (req.method === "GET" && url.pathname === "/api/look/version") { kioskPing(req); return send(res, 200, { version: readSharedLook()?.version || 0 }); }
+    if (req.method === "GET" && url.pathname === "/api/look/version") { kioskPing(req); return send(res, 200, { version: readSharedLook()?.version || 0, questions: readSharedQuestions()?.version || 0 }); }
+    if (req.method === "GET" && url.pathname === "/api/questions") return send(res, 200, readSharedQuestions() || { version: 0 });
     if (req.method === "POST" && /^\/api\/(checkout|checkout\/find|invite|returning)$/.test(url.pathname)) return await handleKioskLookup(req, res, url.pathname.slice(5));
     if (req.method === "GET" && url.pathname === "/api/look") return send(res, 200, readSharedLook() || { version: 0 });
     // Staff names: paired tablets, this computer, or a signed-in admin panel only (once pairing is in use).
@@ -2978,7 +3020,7 @@ async function check() {
 if (require.main !== module) {
   module.exports = { makePassword, poolRule, passwordFromRule, ruleStrength, e164, normMac, r1Time, firstName, onSite, onlineNow,
     pdfTable, fitText, pdfChars, zoned, zonedMidnight, summaryPeriod, cleanInvite, blockedMatch, normName, normPhone, totp, base32, unbase32,
-    hashPassword, passwordMatches, esc, deviceBrief, devLabel, tarEntries, readKup, netSettings, cleanExtra };
+    hashPassword, passwordMatches, esc, deviceBrief, devLabel, tarEntries, readKup, netSettings, cleanExtra, cleanQuestions };
 } else if (process.argv[2] === "check") {
   check().catch(e => { console.error(e.message); process.exit(1); });
 } else if (process.argv[2] === "reset-admin") {

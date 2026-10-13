@@ -3,6 +3,7 @@ data/
 node_modules/
 certs/
 shared-look.json
+shared-questions.json
 setup-code.txt
 vm/cache/
 vm/dist/

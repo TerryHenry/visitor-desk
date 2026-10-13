@@ -126,3 +126,17 @@ test("shared look: saved for every kiosk, including the name under the logo", as
   await s.api("PUT", "/api/admin/look", { look: { logo: "javascript:alert(1)" } }, admin);
   assert.equal((await s.api("GET", "/api/look")).body.look.logo, "", "only real image data is accepted as a logo");
 });
+
+test("shared visitor questions: admins save them, every kiosk can read them, off again", async () => {
+  const body = { fields: { email: "hidden", c_abc123: "required" }, custom: [{ key: "c_abc123", label: "Plate", type: "text", step: "you" }],
+    fieldOrder: ["name", "c_abc123"], hostMode: "list", reasons: ["Meeting"] };
+  assert.equal((await s.api("PUT", "/api/admin/questions", body, desk)).status, 403, "front desk can't");
+  assert.equal((await s.api("GET", "/api/look/version")).body.questions, 0);
+  const put = await s.api("PUT", "/api/admin/questions", body, admin);
+  assert.equal(put.status, 200); assert.ok(put.body.version > 0);
+  assert.equal((await s.api("GET", "/api/look/version")).body.questions, put.body.version, "tablets see a new version");
+  const q = (await s.api("GET", "/api/questions")).body;
+  assert.equal(q.custom[0].label, "Plate"); assert.equal(q.fields.email, "hidden"); assert.equal(q.hostMode, "list");
+  assert.equal((await s.api("DELETE", "/api/admin/questions", undefined, admin)).status, 200);
+  assert.equal((await s.api("GET", "/api/look/version")).body.questions, 0);
+});

@@ -156,7 +156,10 @@ The settings page is grouped like this (on a wide screen there's a menu on the l
   **Add a question** asks visitors anything else: a short or long answer, a number, a date, a choice from a list or a
   tick box (for example "I have read the safety rules", set to Required), on the "About you" or "Who you're visiting"
   step. Questions show as you type them, in every language. Answers are kept with the visit, shown in Visitor records,
-  searchable, and each question gets its own column in the CSV export. These settings are saved on each tablet. The host list is one person per line as `name, email, mobile`
+  searchable, and each question gets its own column in the CSV export. Tick **Use these questions on every kiosk**
+  to share everything in this section (Required/Optional/Hidden, order, added questions, how visitors choose who
+  they're visiting, and the reasons) from the kiosk server: other tablets switch to it within 2 minutes, once they're
+  back at the start screen. Turned off, each tablet keeps its own. The host list is one person per line as `name, email, mobile`
   (for example `Jordan Lee, jordan@acme.com, 813-555-0142`); visitors pick from it or type ahead. Also the visit
   reasons and the agreement text.
 - **Kiosk buttons and languages**: **Leaving? Check out**, **I have an invite code**, **Been here before?** (visitors

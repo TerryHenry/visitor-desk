@@ -132,3 +132,13 @@ test("answers to extra questions: text only, limited, empty ones dropped", () =>
   assert.equal(S.cleanExtra([{ label: "x".repeat(200), value: "y".repeat(5000) }])[0].value.length, 1000);
   assert.equal(S.cleanExtra("nope"), undefined); assert.equal(S.cleanExtra([]), undefined);
 });
+
+test("shared questions: only known settings are kept, the name stays required", () => {
+  const q = S.cleanQuestions({ fields: { name: "hidden", email: "optional", c_abc123: "required", evil: "required", phone: "maybe" },
+    custom: [{ key: "c_abc123", label: " Plate ", type: "text", step: "visit" }, { key: "c_bad!", label: "X", type: "text" },
+      { key: "c_def456", label: "Parking", type: "choice", choices: ["Yes"] }, { key: "c_ghi789", label: "Rules", type: "script" }],
+    fieldOrder: ["email", "name", "c_abc123", "nope", "email"], hostMode: "weird", reasons: [" Meeting ", "", "Interview"] });
+  assert.deepEqual(JSON.parse(JSON.stringify(q)), { fields: { email: "optional", c_abc123: "required", name: "required" },
+    custom: [{ key: "c_abc123", label: "Plate", type: "text", step: "visit", choices: [] }],
+    fieldOrder: ["email", "name", "c_abc123"], hostMode: "suggest", reasons: ["Meeting", "Interview"] });
+});

@@ -50,8 +50,8 @@ ntp() {
 }
 
 # Encrypted backups of what's unique to this VM: settings and users (config.json), visitor records (data/), HTTPS
-# certificates (certs/) and the shared look. AES-256 with a password (openssl, PBKDF2 600,000 rounds).
-KEEP=(config.json data certs shared-look.json)
+# certificates (certs/), the shared look and the shared visitor questions. AES-256 with a password (openssl, PBKDF2 600,000 rounds).
+KEEP=(config.json data certs shared-look.json shared-questions.json)
 backup() {
   local out=${1:-$HOME/visitor-desk-backup-$(date +%Y%m%d-%H%M).enc} p1 p2 files
   read -rsp "Backup password (8+ characters; you'll need it to restore): " p1; echo

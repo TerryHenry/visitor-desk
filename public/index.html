@@ -809,7 +809,7 @@ function saveSettings(s){
   try { localStorage.setItem(KEY, JSON.stringify(s)); return true; } catch(e){ return false; }
 }
 let S = loadSettings();
-const LOOK = { shared:false };   // whether the kiosk server has a look for every kiosk
+const LOOK = { shared:false, questions:false };   // whether the kiosk server has a look / visitor questions for every kiosk
 
 /* ================= Helpers ================= */
 const $ = s => document.querySelector(s);
@@ -1593,6 +1593,8 @@ function renderAdmin(d){
 
     <section class="adm-sec"><h3>What visitors fill in</h3>
       <p class="help">Hidden items are skipped entirely. Steps with nothing to show are skipped too. Use the arrows to change the order within a step, and <b>Add a question</b> for anything else you need to ask.</p>
+      ${d.kiosk.backendUrl ? `<label class="check" style="margin-bottom:.5rem"><input type="checkbox" id="questionsShared"${LOOK.questions?" checked":""}><span><b>Use these questions on every kiosk</b>
+        Everything in this section: Required, Optional or Hidden, the order, your added questions, how visitors choose who they're visiting and the reasons for visit. Saved on the kiosk server; other kiosks switch to them within 2 minutes. Turn off to set each kiosk separately.</span></label>` : ""}
       <div id="fieldList"></div>
       <div data-when="fields.host=required|optional" style="margin-top:1rem">
         <div class="field"><label>How visitors choose who they're visiting</label>${sel("hostMode",[["suggest","Type a name, with suggestions"],["list","Pick from the list only"]],d.hostMode)}</div>
@@ -1783,6 +1785,14 @@ function renderAdmin(d){
         if (share.checked){ const r = await r1Api("PUT", "/look", { theme:s.theme, look:s.look, orgName:s.orgName, headline:s.headline }); LOOK.shared = true; s.lookVersion = r.version; }
         else { await r1Api("DELETE", "/look"); LOOK.shared = false; s.lookVersion = 0; }
       }catch(err){ $("#admErr").textContent = "Couldn't save the shared look: " + err.message; return; }
+    }
+    const shareQ = $("#questionsShared");
+    if (shareQ && (shareQ.checked || LOOK.questions)){
+      if (!R1UI.cfg){ $("#admErr").textContent = "Couldn't reach the kiosk server to save the shared questions."; return; }
+      try{
+        if (shareQ.checked){ const r = await r1Api("PUT", "/questions", { fields:s.fields, custom:s.custom, fieldOrder:s.fieldOrder, hostMode:s.hostMode, reasons:s.reasons }); LOOK.questions = true; s.questionsVersion = r.version; }
+        else { await r1Api("DELETE", "/questions"); LOOK.questions = false; s.questionsVersion = 0; }
+      }catch(err){ $("#admErr").textContent = "Couldn't save the shared questions: " + err.message; return; }
     }
     if (d.kiosk.backendUrl) s.network.sharedPassword = "";   // the kiosk server holds it
     S = s;
@@ -2755,7 +2765,7 @@ const HELP = [
       <li>Lost tablet? <b>Remove</b> it from the list.</li></ol>
     <p>Paired tablets check in every 2 minutes; <b>Staff alerts</b> can tell you when one goes offline.</p>` },
   { id:"kiosk", title:"The kiosk screen: fields, languages, badges", who:"admin", body:`
-    <ul><li><b>What visitors fill in</b>: each item Required, Optional or Hidden, including photo, license scan and <b>signature</b>. The arrows change the order within a step. <b>Add a question</b> asks anything else (short or long answer, number, date, choice from a list, tick box); answers are kept with the visit and exported in the CSV.</li>
+    <ul><li><b>What visitors fill in</b>: each item Required, Optional or Hidden, including photo, license scan and <b>signature</b>. The arrows change the order within a step. <b>Add a question</b> asks anything else (short or long answer, number, date, choice from a list, tick box); answers are kept with the visit and exported in the CSV. "Use these questions on every kiosk" shares this whole section with all tablets.</li>
       <li><b>Kiosk buttons and languages</b>: Leaving? Check out, I have an invite code, Been here before?, and Spanish/French. Text you've changed (headline, agreement, reasons) shows as you typed it.</li>
       <li><b>After check-in</b>: print badge (full page or label printer size), email/text the visitor, tell the host.</li>
       <li><b>Look</b>: colors, logo, background. "Use this look on every kiosk" shares it with all tablets.</li>
@@ -3713,13 +3723,14 @@ buildFlow();
 
 if (S.kiosk.backendUrl) fetch(new URL("/api/kiosk-info", new URL(S.kiosk.backendUrl, location.href))).then(r=>r.ok?r.json():null)
   .then(j=>{ if (j && Number.isFinite(j.recordDays)){ KIOSK_INFO.recordDays = j.recordDays; if (current===0 && !$("#admin").classList.contains("open")) buildFlow(); } }).catch(()=>{});
-// Shared look: when the kiosk server has one, use it (checked on load and every 2 minutes).
+// Shared look and shared visitor questions: when the kiosk server has them, use them (checked on load and every 2 minutes).
 async function syncLook(){
   if (!S.kiosk.backendUrl || $("#admin").classList.contains("open")) return;
   const base = new URL(S.kiosk.backendUrl, location.href);
   try{
-    const { version } = await (await fetch(new URL("/api/look/version", base), { headers:kioskHeaders() })).json();   // also tells the server this tablet is alive
-    LOOK.shared = version > 0;
+    const { version, questions } = await (await fetch(new URL("/api/look/version", base), { headers:kioskHeaders() })).json();   // also tells the server this tablet is alive
+    LOOK.shared = version > 0; LOOK.questions = questions > 0;
+    if (questions && questions !== S.questionsVersion) await syncQuestions(base);
     if (!version || version === S.lookVersion) return;
     const shared = await (await fetch(new URL("/api/look", base))).json();
     S.theme = shared.theme; S.look = merge(clone(DEFAULTS.look), shared.look); S.lookVersion = shared.version;
@@ -3729,6 +3740,15 @@ async function syncLook(){
     if (current==="pass") return;   // don't disturb a visitor's pass screen; the next reset picks it up
     if (current===0) buildFlow();
   }catch{}
+}
+async function syncQuestions(base){
+  if (current !== 0) return;   // a visitor is checking in: try again at the next check, once the kiosk is back at the start
+  const q = await (await fetch(new URL("/api/questions", base))).json();
+  if (!q.version) return;
+  S.fields = merge(clone(DEFAULTS.fields), q.fields || {}); S.custom = q.custom || []; S.fieldOrder = q.fieldOrder || [];
+  S.hostMode = q.hostMode || DEFAULTS.hostMode; if (q.reasons?.length) S.reasons = q.reasons;
+  S.questionsVersion = q.version; saveSettings(S);
+  buildFlow();
 }
 syncLook(); setInterval(syncLook, 120e3);
 

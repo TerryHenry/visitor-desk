@@ -20,7 +20,7 @@ the VM starts; the first boot works without internet (RUCKUS One still needs it)
   shown as a QR code that joins in one scan, with the device limit and expiry you choose.
 - **Fast check-in on a tablet.** Name, contact details, who they're visiting, a photo and an ID photo through the
   tablet camera, the agreement and an optional signature, plus your own questions (short or long answer, number,
-  date, choice list, tick box), in the order you choose. English, Spanish and French. A built-in on-screen keyboard
+  date, choice list, tick box), in the order you choose, shared with every tablet if you like. English, Spanish and French. A built-in on-screen keyboard
   for touch-screen PCs that don't bring up their own.
 - **Expected visitors.** Invite codes by email or text, multi-day passes for contractors, CSV import, and returning
   visitors who fill in their details from an earlier visit.

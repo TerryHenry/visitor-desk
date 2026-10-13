@@ -445,6 +445,11 @@ API reference: https://docs.ruckus.cloud/api/
   value ≤1000) → record.extra. Shown in the visit details, searched (page and reports), one CSV column per label after
   Reason. Not in the PDF (fixed columns). Custom labels show as typed in every language (err_required/err_tick/
   err_number/chooseOne are translated).
+- Shared questions (1.11.0), like the shared look: "Use these questions on every kiosk" → `PUT /api/admin/questions`
+  {fields, custom, fieldOrder, hostMode, reasons} (admins; `cleanQuestions()` keeps only known keys/types, name always
+  required) → shared-questions.json (gitignored, in `kiosk backup`). `DELETE` turns it off. Public `GET /api/questions`;
+  `/api/look/version` also returns `questions` (version). `syncLook()` → `syncQuestions()` applies them only when the
+  kiosk is at the start screen (current === 0), else at the next 2-minute check. S.questionsVersion, LOOK.questions.
 
 ## Releases (GitHub, from 1.8.1)
 - Code: private repo TerryHenry/visitor-desk. Downloads: public repo TerryHenry/visitor-desk-releases (README, docs/,
@@ -455,4 +460,4 @@ API reference: https://docs.ruckus.cloud/api/
   `vm/build-ova.sh` and `vm/build-update.sh` (needs the gitignored vm/keys/update-signing.key and vm/cache).
 - Before publishing: boot the previous release's OVA under qemu, install the new .kup through the admin panel API
   (upload → install → status done → new version), then boot the new OVA and run `vm/smoke-test.sh`.
-- Never commit vm/keys/, config.json, data/, certs/, shared-look.json, CLAUDE.local.md.
+- Never commit vm/keys/, config.json, data/, certs/, shared-look.json, shared-questions.json, CLAUDE.local.md.
