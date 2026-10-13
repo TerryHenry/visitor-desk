@@ -427,6 +427,12 @@ body.osk-open{padding-bottom:var(--osk-h,0)}
 .frow{display:flex;align-items:center;gap:1rem;padding:.6rem 0;border-top:1px solid var(--line)}
 .frow:first-of-type{border-top:0}
 .frow span{flex:1;font-weight:600}
+.frow .fmove,.frow .fedit{flex:none;display:flex;gap:.3rem}.frow .fmove{width:5.6rem}
+.frow .fmove button,.frow .fedit button{min-height:2.4rem;padding:0 .7rem}
+.frow .fname{min-width:0}.frow select{flex:none;width:9.5rem}.fname small{display:block;font-weight:400;color:var(--muted);font-size:.8125rem;overflow-wrap:anywhere}
+.fstep{font-size:.75rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:1.1rem 0 .1rem}
+.fadd{border-top:1px solid var(--line);margin-top:1rem}
+@media (max-width:560px){.frow{flex-wrap:wrap}.frow .fname{flex:1 1 60%}.frow select{flex:1 1 100%;width:auto}}
 .frow select{width:auto;min-width:9rem;min-height:2.75rem;padding:.4rem .6rem}
 .hint{color:var(--muted);font-size:.875rem;margin:.3rem 0 0;font-weight:400}
 .warn{background:var(--warn-bg);border-radius:10px;padding:.7rem .9rem;font-size:.9375rem;margin:0 0 1rem}
@@ -589,6 +595,8 @@ const DEFAULTS = {
   },
   fields: { name:"required", email:"required", phone:"required", company:"optional",
             host:"required", purpose:"optional", photo:"required", idScan:"required", signature:"hidden" },
+  // Extra questions added under "What visitors fill in" [{key, label, type, choices, step}], and the order of all fields.
+  custom: [], fieldOrder: [],
   // Kiosk buttons on the first screen (with a kiosk server), and the visitor languages.
   options: { checkout:true, invites:true, returning:true, languages:["en"] },
   hostMode: "suggest",       // suggest | list
@@ -615,6 +623,16 @@ const FIELDS = [
   {key:"signature", label:"Signature (on the last step)", type:"signature", step:"last"}
 ];
 
+// Extra questions an admin can add, by type.
+const CUSTOM_TYPES = [["text","Short answer"],["longtext","Long answer"],["number","Number"],["date","Date"],["choice","Choose from a list"],["checkbox","Tick box"]];
+// Every field in the order the admin set: the built-in ones and the extra questions. Each stays on its own step.
+function fieldList(s = S){
+  const custom = (s.custom || []).map(c => ({ key:c.key, label:c.label, type:"custom", ctype:c.type, choices:c.choices || [], step:c.step === "visit" ? "visit" : "you", custom:true }));
+  const all = [...FIELDS, ...custom], order = s.fieldOrder || [];
+  const rank = f => { const i = order.indexOf(f.key); return i < 0 ? 1000 + all.indexOf(f) : i; };
+  return all.slice().sort((a, b) => rank(a) - rank(b));
+}
+
 const MODES = {
   portal:{title:"Captive portal with guest pass code", desc:"Visitors join an open network, then type a code on the sign-in page. Code is created in RUCKUS One."},
   dpsk:  {title:"Personal password per visitor (DPSK)", desc:"Each visitor gets their own Wi-Fi password. The QR code connects them in one scan."},
@@ -632,7 +650,7 @@ const I18N = {
     hVisit:"Who are you here to see?", ledeVisitNotify:"We'll let them know you've arrived.", ledeVisit:"This goes on your visitor record.",
     hId:"Photo and ID", ledeId:"Your photo goes on your badge. Your ID is checked by reception and isn't printed.",
     f_name:"Full name", f_email:"Email", f_phone:"Phone", f_company:"Company", f_host:"Person you're visiting", f_purpose:"Reason for visit",
-    optional:"(optional)", kbDone:"Done", kbSpace:"space", kbDelete:"Delete", kbShift:"Shift", choosePerson:"Choose a person", chooseReason:"Choose a reason", onFile:"On file. Type to change it.",
+    optional:"(optional)", err_required:"Please fill this in.", err_tick:"Please tick this box.", err_number:"Please enter a number.", chooseOne:"Choose one", kbDone:"Done", kbSpace:"space", kbDelete:"Delete", kbShift:"Shift", choosePerson:"Choose a person", chooseReason:"Choose a reason", onFile:"On file. Type to change it.",
     capFace:"Take your photo", capFaceSub:"Look at the camera", capId:"Scan your driver's license", capIdSub:"Front side, flat and in focus",
     capReuse:"Using your photo from last time", capReuseSub:"Tap to take a new one", retake:"Retake",
     consent:"I agree that my details, any photos, and which Wi-Fi access points my devices connect to are stored for building security and deleted after {days} days.",
@@ -677,7 +695,7 @@ const I18N = {
     hVisit:"¿A quién viene a ver?", ledeVisitNotify:"Le avisaremos que usted ha llegado.", ledeVisit:"Esto se guarda en su registro de visita.",
     hId:"Foto e identificación", ledeId:"Su foto aparece en su gafete. Recepción revisa su identificación y no se imprime.",
     f_name:"Nombre completo", f_email:"Correo electrónico", f_phone:"Teléfono", f_company:"Empresa", f_host:"Persona a quien visita", f_purpose:"Motivo de la visita",
-    optional:"(opcional)", kbDone:"Listo", kbSpace:"espacio", kbDelete:"Borrar", kbShift:"Mayúsculas", choosePerson:"Elija una persona", chooseReason:"Elija un motivo", onFile:"Guardado. Escriba para cambiarlo.",
+    optional:"(opcional)", err_required:"Complete este campo.", err_tick:"Marque esta casilla.", err_number:"Escriba un número.", chooseOne:"Elija una opción", kbDone:"Listo", kbSpace:"espacio", kbDelete:"Borrar", kbShift:"Mayúsculas", choosePerson:"Elija una persona", chooseReason:"Elija un motivo", onFile:"Guardado. Escriba para cambiarlo.",
     capFace:"Tómese una foto", capFaceSub:"Mire a la cámara", capId:"Escanee su licencia de conducir", capIdSub:"Lado frontal, plano y enfocado",
     capReuse:"Usando su foto de la última vez", capReuseSub:"Toque para tomar una nueva", retake:"Repetir",
     consent:"Acepto que mis datos, mis fotos y los puntos de acceso Wi-Fi a los que se conectan mis dispositivos se guarden por seguridad del edificio y se borren después de {days} días.",
@@ -722,7 +740,7 @@ const I18N = {
     hVisit:"Qui venez-vous voir ?", ledeVisitNotify:"Nous la préviendrons de votre arrivée.", ledeVisit:"Cela figure dans votre fiche de visite.",
     hId:"Photo et pièce d'identité", ledeId:"Votre photo figure sur votre badge. L'accueil vérifie votre pièce d'identité, qui n'est pas imprimée.",
     f_name:"Nom complet", f_email:"E-mail", f_phone:"Téléphone", f_company:"Entreprise", f_host:"Personne que vous visitez", f_purpose:"Motif de la visite",
-    optional:"(facultatif)", kbDone:"OK", kbSpace:"espace", kbDelete:"Effacer", kbShift:"Majuscules", choosePerson:"Choisissez une personne", chooseReason:"Choisissez un motif", onFile:"Enregistré. Tapez pour le modifier.",
+    optional:"(facultatif)", err_required:"Veuillez remplir ce champ.", err_tick:"Veuillez cocher cette case.", err_number:"Veuillez saisir un nombre.", chooseOne:"Choisissez", kbDone:"OK", kbSpace:"espace", kbDelete:"Effacer", kbShift:"Majuscules", choosePerson:"Choisissez une personne", chooseReason:"Choisissez un motif", onFile:"Enregistré. Tapez pour le modifier.",
     capFace:"Prenez votre photo", capFaceSub:"Regardez la caméra", capId:"Scannez votre permis de conduire", capIdSub:"Recto, à plat et net",
     capReuse:"Votre photo de la dernière fois", capReuseSub:"Touchez pour en prendre une nouvelle", retake:"Reprendre",
     consent:"J'accepte que mes informations, mes photos et les points d'accès Wi-Fi auxquels mes appareils se connectent soient conservés pour la sécurité du bâtiment et supprimés après {days} jours.",
@@ -891,7 +909,14 @@ let steps = [], current = 0, photos = {}, timer = null;
 
 function fieldHTML(f){
   const opt = req(f.key) ? "" : ` <span class="opt">${T("optional")}</span>`;
-  const id = "f-"+f.key, label = T("f_"+f.key);
+  const id = "f-"+f.key, label = f.custom ? esc(f.label) : T("f_"+f.key);
+  if (f.custom){   // admin-written questions show as typed, in every language
+    if (f.ctype === "checkbox") return `<div class="field"><label class="check"><input type="checkbox" id="${id}"><span>${label}${opt}</span></label><div class="err"></div></div>`;
+    if (f.ctype === "choice") return `<div class="field"><label for="${id}">${label}${opt}</label><select id="${id}"><option value="">${T("chooseOne")}</option>${f.choices.map(c=>`<option>${esc(c)}</option>`).join("")}</select><div class="err"></div></div>`;
+    if (f.ctype === "longtext") return `<div class="field"><label for="${id}">${label}${opt}</label><textarea id="${id}" rows="3" maxlength="1000"></textarea><div class="err"></div></div>`;
+    const attrs = { number:`type="text" inputmode="decimal"`, date:`type="date"` }[f.ctype] || `type="text"`;
+    return `<div class="field"><label for="${id}">${label}${opt}</label><input id="${id}" ${attrs} maxlength="200" autocomplete="off"><div class="err"></div></div>`;
+  }
   if (f.type==="host"){
     if (S.hostMode==="list"){
       return `<div class="field"><label for="${id}">${label}${opt}</label><select id="${id}"><option value="">${T("choosePerson")}</option>${S.hosts.map(h=>`<option>${esc(h)}</option>`).join("")}</select><div class="err"></div></div>`;
@@ -964,10 +989,11 @@ function buildFlow(){
     {id:"visit", title:T("stepVisit"), h:T("hVisit"), lede:S.delivery.notifyHost?T("ledeVisitNotify"):T("ledeVisit")},
     {id:"id",    title:T("stepId"), h:T("hId"), lede:T("ledeId")}
   ];
-  steps = defs.filter(d => FIELDS.some(f=>f.step===d.id && vis(f.key)));
+  const list = fieldList();
+  steps = defs.filter(d => list.some(f=>f.step===d.id && vis(f.key)));
   const last = steps.length-1;
   let html = steps.map((d,i)=>{
-    const fs = FIELDS.filter(f=>f.step===d.id && vis(f.key));
+    const fs = list.filter(f=>f.step===d.id && vis(f.key));
     const inputs = fs.filter(f=>!["face","idcard"].includes(f.type)).map(fieldHTML).join("");
     const caps = fs.filter(f=>["face","idcard"].includes(f.type));
     const consent = (i===last && S.consent.enabled)
@@ -990,7 +1016,7 @@ function buildFlow(){
 
   $("#flow").querySelectorAll("[data-next]").forEach(b=>b.onclick=()=>next(b));
   $("#flow").querySelectorAll("[data-back]").forEach(b=>b.onclick=()=>show(current-1));
-  $("#flow").querySelectorAll("input,select").forEach(i=>i.addEventListener("input",()=>setErr(i,"")));
+  $("#flow").querySelectorAll("input,select,textarea").forEach(i=>i.addEventListener("input",()=>setErr(i,"")));
   $("#flow").querySelectorAll("[data-cap]").forEach(wireCapture);
   $("#flow").querySelectorAll("[data-tool]").forEach(b=>b.onclick = ()=>({ checkout:checkoutFlow, invite:inviteFlow, returning:returningFlow })[b.dataset.tool]());
   $("#flow").querySelectorAll("[data-lang]").forEach(b=>b.onclick = ()=>setLang(b.dataset.lang));
@@ -1001,10 +1027,10 @@ function buildFlow(){
 }
 // Switching language keeps what the visitor already typed.
 function setLang(code){
-  const vals = {}; $("#flow").querySelectorAll("input[id^=f-],select[id^=f-]").forEach(el=>vals[el.id] = el.value);
+  const vals = {}; $("#flow").querySelectorAll("input[id^=f-],select[id^=f-],textarea[id^=f-]").forEach(el=>vals[el.id] = el.type === "checkbox" ? el.checked : el.value);
   const keep = { ...photos }, note = $("#preNote")?.dataset.key;
   LANG = code; buildFlow();
-  for (const [id, v] of Object.entries(vals)) if (document.getElementById(id)) document.getElementById(id).value = v;
+  for (const [id, v] of Object.entries(vals)){ const el = document.getElementById(id); if (!el) continue; if (el.type === "checkbox") el.checked = v; else el.value = v; }
   if (PRE) applyPrefill(PRE, note);
   for (const [k, v] of Object.entries(keep)){ const box = $(`[data-cap="${k}"]`); if (!box) continue; if (v === "reuse") showReuse(box); else setPhoto(box, v); }
 }
@@ -1022,13 +1048,21 @@ function show(i){
 
 function setErr(el,msg){
   el.classList.toggle("invalid",!!msg);
-  const e = el.parentElement.querySelector(".err"); if (e) e.textContent = msg||"";
+  const e = (el.closest(".field") || el.parentElement).querySelector(".err"); if (e) e.textContent = msg||"";
   return !msg;
 }
 function validate(i){
   let ok = true;
-  FIELDS.filter(f=>f.step===steps[i].id && vis(f.key)).forEach(f=>{
+  fieldList().filter(f=>f.step===steps[i].id && vis(f.key)).forEach(f=>{
     if (["face","idcard"].includes(f.type)) return;
+    if (f.custom){
+      const el = $("#f-"+f.key); if (!el) return;
+      let msg = "";
+      if (f.ctype === "checkbox"){ if (req(f.key) && !el.checked) msg = T("err_tick"); }
+      else { const v = el.value.trim(); if (!v && req(f.key)) msg = T("err_required"); else if (v && f.ctype === "number" && !/^-?\d+([.,]\d+)?$/.test(v)) msg = T("err_number"); }
+      if (!setErr(el,msg)) ok = false;
+      return;
+    }
     const el = $("#f-"+f.key), v = el.value.trim();
     let msg = "";
     if (!v && req(f.key) && !el.dataset.onfile) msg = T(f.key==="host" ? (S.hostMode==="list" ? "err_hostList" : "err_host") : "err_"+f.key);
@@ -1039,7 +1073,7 @@ function validate(i){
   });
   const capErr = $("#capErr"+i);
   if (capErr){
-    const miss = FIELDS.filter(f=>f.step===steps[i].id && ["face","idcard"].includes(f.type) && req(f.key) && !photos[f.key])
+    const miss = fieldList().filter(f=>f.step===steps[i].id && ["face","idcard"].includes(f.type) && req(f.key) && !photos[f.key])
       .map(f=>T(f.type==="face" ? "what_photo" : "what_id"));
     capErr.textContent = miss.length ? T("err_add", { what: miss.join(" " + T("and") + " ") }) : "";
     if (miss.length) ok = false;
@@ -1185,6 +1219,8 @@ async function next(btn){
   const visitor = { name:val("name"), email:val("email"), phone:val("phone"), company:val("company"),
     host:val("host"), purpose:val("purpose"), photo:photos.photo && photos.photo !== "reuse" ? photos.photo : null, idImage:photos.idScan||null,
     signature:vis("signature") ? signatureData() : null, lang:LANG,
+    extra: fieldList().filter(f=>f.custom && vis(f.key) && $("#f-"+f.key)).map(f=>{ const el = $("#f-"+f.key);
+      return { label:f.label, value: f.ctype === "checkbox" ? (el.checked ? "Yes" : "No") : el.value.trim() }; }).filter(e=>e.value),
     consented:S.consent.enabled ? true : null, checkedInAt:new Date().toISOString() };
   const exp = expiry();
   const payload = { visitor,
@@ -1556,8 +1592,8 @@ function renderAdmin(d){
     </section>
 
     <section class="adm-sec"><h3>What visitors fill in</h3>
-      <p class="help">Hidden items are skipped entirely. Steps with nothing to show are skipped too.</p>
-      ${FIELDS.map(f=>`<div class="frow"><span>${f.label}</span>${f.locked?`<select disabled><option>Required</option></select>`:sel("fields."+f.key,[["required","Required"],["optional","Optional"],["hidden","Hidden"]],d.fields[f.key])}</div>`).join("")}
+      <p class="help">Hidden items are skipped entirely. Steps with nothing to show are skipped too. Use the arrows to change the order within a step, and <b>Add a question</b> for anything else you need to ask.</p>
+      <div id="fieldList"></div>
       <div data-when="fields.host=required|optional" style="margin-top:1rem">
         <div class="field"><label>How visitors choose who they're visiting</label>${sel("hostMode",[["suggest","Type a name, with suggestions"],["list","Pick from the list only"]],d.hostMode)}</div>
         <div class="field"><label for="hostsIn">People visitors can see</label><textarea id="hostsIn" data-k="hosts" data-lines placeholder="Jordan Lee, jordan@acme.com, 813-555-0142">${esc((d.kiosk.backendUrl && JSON.stringify(d.hosts) === JSON.stringify(DEFAULTS.hosts) ? DEFAULTS.hostExamples : d.hosts).join("\n"))}</textarea>
@@ -1697,6 +1733,7 @@ function renderAdmin(d){
     r1PoolVis();
     syncAdminNav();
   };
+  fieldsAdmin(d, refresh);
   buildAdminNav();
   box.addEventListener("input", refresh); box.addEventListener("change", refresh); refresh();
 
@@ -2718,7 +2755,7 @@ const HELP = [
       <li>Lost tablet? <b>Remove</b> it from the list.</li></ol>
     <p>Paired tablets check in every 2 minutes; <b>Staff alerts</b> can tell you when one goes offline.</p>` },
   { id:"kiosk", title:"The kiosk screen: fields, languages, badges", who:"admin", body:`
-    <ul><li><b>What visitors fill in</b>: each item Required, Optional or Hidden, including photo, license scan and <b>signature</b>.</li>
+    <ul><li><b>What visitors fill in</b>: each item Required, Optional or Hidden, including photo, license scan and <b>signature</b>. The arrows change the order within a step. <b>Add a question</b> asks anything else (short or long answer, number, date, choice from a list, tick box); answers are kept with the visit and exported in the CSV.</li>
       <li><b>Kiosk buttons and languages</b>: Leaving? Check out, I have an invite code, Been here before?, and Spanish/French. Text you've changed (headline, agreement, reasons) shows as you typed it.</li>
       <li><b>After check-in</b>: print badge (full page or label printer size), email/text the visitor, tell the host.</li>
       <li><b>Look</b>: colors, logo, background. "Use this look on every kiosk" shares it with all tablets.</li>
@@ -2979,7 +3016,7 @@ function renderVisits(){
     if (V.range === "onsite" && !(V.onsiteMode === "connected" ? connected(r) : onSite(r))) return false;
     const d = String(r.checkedInAt||"").slice(0,10);
     if ((from && d < from) || (to && d > to) || (since && String(r.checkedInAt||"") < since)) return false;
-    return !q || [r.name,r.company,r.host,r.email,r.phone,r.purpose].some(x=>String(x||"").toLowerCase().includes(q));
+    return !q || [r.name,r.company,r.host,r.email,r.phone,r.purpose,...(r.extra||[]).map(e=>e.value)].some(x=>String(x||"").toLowerCase().includes(q));
   });
   const here = V.range === "onsite";
   $("#vOnsiteBar").hidden = !here; $("#vList").classList.toggle("here", here);
@@ -3033,7 +3070,7 @@ async function toggleVisit(btn){
   box.innerHTML = `<dl>${row("Checked in", fmtTime(r.checkedInAt))}${row("Checked out", r.checkedOutAt ? `${fmtTime(r.checkedOutAt)}${r.checkedOutBy ? `, by ${r.checkedOutBy}` : ""}` : "")}
       ${row("Check-out code", !r.checkedOutAt && onSite(r) ? r.checkoutCode : "")}${row("Invited", r.inviteId ? "Yes, with an invite code" : "")}${row("Host on the way", r.hostOnWayAt ? fmtTime(r.hostOnWayAt) : "")}${row("Last device on Wi-Fi", r.lastDeviceSeen ? fmtTime(r.lastDeviceSeen) + (r.probablyLeft ? " (probably left)" : "") : "")}${row("Returning visitor", r.returningFrom ? "Yes" + (r.photoFrom ? ", reused their photo" : "") : "")}
       ${row("Language", r.lang ? LANGS[r.lang] || r.lang : "")}${row("Email", r.email)}${row("Phone", r.phone)}${row("Company", r.company)}
-      ${row("Visiting", r.host)}${row("Reason", r.purpose)}${row("Wi-Fi", [MODE_NAMES[r.mode]||r.mode, r.ssid].filter(Boolean).join(", "))}
+      ${row("Visiting", r.host)}${row("Reason", r.purpose)}${(r.extra||[]).map(e=>row(esc(e.label), e.value)).join("")}${row("Wi-Fi", [MODE_NAMES[r.mode]||r.mode, r.ssid].filter(Boolean).join(", "))}
       ${row("Pass expires", fmtTime(r.passExpiresAt))}${row("Agreed to terms", r.consented ? "Yes" : "")}${row("Record deleted on", fmtTime(r.deleteAfter))}
       ${r.idImage && !r.hasId ? row("License", "Checked, not stored") : ""}
       ${r.license ? `<dt>License barcode</dt><dd>${esc(`${r.license.first} ${r.license.last}`)}${r.license.state?`, ${esc(r.license.state)}`:""}${r.license.expires?`, expires ${esc(new Date(r.license.expires+"T12:00:00").toLocaleDateString())}`:""}
@@ -3448,6 +3485,78 @@ function hostLines(){
     const [name="", email="", phone=""] = l.split(",").map(x=>x.trim());
     return { name, email, phone };
   }).filter(h=>h.name);
+}
+/* ---- What visitors fill in: order, Required / Optional / Hidden, and extra questions (S.custom) ---- */
+const STEP_NAMES = { you:"About you", visit:"Who you're visiting", id:"Photo and ID", last:"Last step" };
+function fieldsAdmin(d, changed){
+  const box = $("#fieldList"); if (!box) return;
+  d.custom ||= []; d.fieldOrder ||= [];
+  let editing = null;   // key of the question being edited
+  const keep = () => { d.fields = readAdmin(d).fields; };   // keep what's picked in the selects before redrawing
+  const formHTML = () => {
+    const c = d.custom.find(x=>x.key===editing) || { label:"", type:"text", choices:[], step:"you" };
+    return `<div class="fadd">
+      <div class="fstep">${editing ? "Edit question" : "Add a question"}</div>
+      <div class="form2"><div class="field"><label for="fqLabel">Question</label><input type="text" id="fqLabel" maxlength="80" placeholder="Vehicle license plate" value="${esc(c.label)}"></div>
+        <div class="field"><label for="fqType">Answer</label><select id="fqType">${CUSTOM_TYPES.map(([v,t])=>`<option value="${v}"${c.type===v?" selected":""}>${t}</option>`).join("")}</select></div></div>
+      <div class="field" id="fqChoicesF"><label for="fqChoices">Choices</label><textarea id="fqChoices" rows="3" placeholder="One per line">${esc(c.choices.join("\n"))}</textarea></div>
+      <div class="field"><label for="fqStep">Ask it on</label><select id="fqStep"><option value="you"${c.step!=="visit"?" selected":""}>About you</option><option value="visit"${c.step==="visit"?" selected":""}>Who you're visiting</option></select></div>
+      <p class="hint">Shown as you type it, in every language. Answers are kept with the visit, shown in Visitor records and included in the CSV export.</p>
+      <div class="err" id="fqErr"></div>
+      <div class="actions" style="margin-top:.25rem"><button class="ghost" id="fqSave" style="flex:none">${editing ? "Save question" : "Add question"}</button>${editing ? `<button class="ghost" id="fqCancel">Cancel</button>` : ""}</div></div>`;
+  };
+  const draw = () => {
+    const list = fieldList(d);
+    const modeSel = f => f.locked ? `<select disabled aria-label="${esc(f.label)}"><option>Required</option></select>`
+      : sel("fields."+f.key, [["required","Required"],["optional","Optional"],["hidden","Hidden"]], d.fields[f.key] || "optional");
+    box.innerHTML = Object.keys(STEP_NAMES).map(step => {
+      const fs = list.filter(f => f.step === step); if (!fs.length) return "";
+      return `<div class="fstep">${STEP_NAMES[step]}</div>` + fs.map((f, i) => `<div class="frow">
+        <span class="fmove">${fs.length > 1 ? `<button class="ghost small" data-up="${f.key}"${i ? "" : " disabled"} aria-label="Move ${esc(f.label)} up">↑</button><button class="ghost small" data-down="${f.key}"${i < fs.length-1 ? "" : " disabled"} aria-label="Move ${esc(f.label)} down">↓</button>` : ""}</span>
+        <span class="fname">${esc(f.label)}${f.custom ? `<small>${esc(CUSTOM_TYPES.find(t=>t[0]===f.ctype)?.[1] || "")}${f.ctype === "choice" ? ": " + esc(f.choices.join(", ")) : ""}</small>` : ""}</span>
+        ${modeSel(f)}
+        ${f.custom ? `<span class="fedit"><button class="ghost small" data-edit="${f.key}">Edit</button><button class="ghost small" data-del="${f.key}">Remove</button></span>` : ""}
+      </div>`).join("");
+    }).join("") + formHTML();
+    wire();
+  };
+  const wire = () => {
+    const syncType = () => $("#fqChoicesF").hidden = $("#fqType").value !== "choice";
+    $("#fqType").onchange = syncType; syncType();
+    const move = (key, dir) => {
+      keep();
+      const list = fieldList(d), keys = list.map(f=>f.key), step = list.find(f=>f.key===key).step;
+      const same = list.filter(f=>f.step===step).map(f=>f.key), other = same[same.indexOf(key) + dir];
+      if (!other) return;
+      const a = keys.indexOf(key), b = keys.indexOf(other); [keys[a], keys[b]] = [keys[b], keys[a]];
+      d.fieldOrder = keys; draw(); changed();
+      (box.querySelector(`[data-${dir < 0 ? "up" : "down"}="${key}"]:not([disabled])`) || box.querySelector(`[data-${dir < 0 ? "down" : "up"}="${key}"]`))?.focus();
+    };
+    box.querySelectorAll("[data-up]").forEach(b => b.onclick = () => move(b.dataset.up, -1));
+    box.querySelectorAll("[data-down]").forEach(b => b.onclick = () => move(b.dataset.down, 1));
+    box.querySelectorAll("[data-del]").forEach(b => b.onclick = () => {
+      const c = d.custom.find(x=>x.key===b.dataset.del);
+      if (!confirm(`Remove "${c.label}"? Answers visitors already gave stay with their visits.`)) return;
+      keep(); d.custom = d.custom.filter(x=>x!==c); d.fieldOrder = d.fieldOrder.filter(k=>k!==c.key); delete d.fields[c.key];
+      if (editing === c.key) editing = null;
+      draw(); changed();
+    });
+    box.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => { keep(); editing = b.dataset.edit; draw(); $("#fqLabel").focus(); });
+    $("#fqCancel")?.addEventListener("click", () => { keep(); editing = null; draw(); });
+    $("#fqSave").onclick = () => {
+      const label = $("#fqLabel").value.replace(/\s+/g, " ").trim(), type = $("#fqType").value, step = $("#fqStep").value;
+      const choices = type === "choice" ? [...new Set($("#fqChoices").value.split("\n").map(x=>x.trim()).filter(Boolean))].slice(0, 30).map(x=>x.slice(0, 80)) : [];
+      const taken = d.custom.some(x=>x.key!==editing && x.label.toLowerCase()===label.toLowerCase()) || FIELDS.some(f=>f.label.toLowerCase()===label.toLowerCase());
+      const err = !label ? "Type the question." : type === "choice" && choices.length < 2 ? "Add at least two choices, one per line."
+        : taken ? "There's already a question with that name." : !editing && d.custom.length >= 20 ? "You can add up to 20 questions." : "";
+      $("#fqErr").textContent = err; if (err) return;
+      keep();
+      if (editing) Object.assign(d.custom.find(x=>x.key===editing), { label, type, choices, step });
+      else { const key = "c_" + Math.random().toString(36).slice(2, 8); d.custom.push({ key, label, type, choices, step }); d.fields[key] = "optional"; }
+      editing = null; draw(); changed();
+    };
+  };
+  draw();
 }
 function readAdmin(base){
   const s = clone(base);

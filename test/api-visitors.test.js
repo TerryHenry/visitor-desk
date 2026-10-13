@@ -171,6 +171,18 @@ test("ending a DPSK visitor's access deletes the password and the identity RUCKU
   assert.ok(s.calls().some(c => c.method === "DELETE" && c.path === `/identityGroups/g1/identities/${v.identityId}`));
 });
 
+test("extra questions: answers kept with the visit, searchable, one CSV column each", async () => {
+  const r = await checkin(s, { name: "Extra Answers", mode: "psk", visitor: { email: "extra@visitor.example", phone: "727-555-0197",
+    extra: [{ label: "Vehicle license plate", value: "XYZ 987" }, { label: "Parking needed", value: "Yes" }] } });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const v = await visitOf("Extra Answers");
+  assert.deepEqual(plain(v.extra), [{ label: "Vehicle license plate", value: "XYZ 987" }, { label: "Parking needed", value: "Yes" }]);
+  const csv = (await s.api("GET", "/api/admin/visits.csv?q=xyz%20987", undefined, admin)).body.toString();
+  const [head, row] = csv.replace(/^\ufeff/, "").split("\r\n");
+  const cols = head.split('","').map(x => x.replace(/"/g, "")), i = cols.indexOf("Vehicle license plate");
+  assert.ok(i > cols.indexOf("Reason"), "after Reason"); assert.equal(row.split('","')[i].replace(/"/g, ""), "XYZ 987");
+});
+
 test("records keep a check-out code only while on site; CSV neutralises formulas", async () => {
   await checkin(s, { name: "=HYPERLINK(\"x\")", mode: "psk" });
   const csv = await s.api("GET", "/api/admin/visits.csv", undefined, admin);

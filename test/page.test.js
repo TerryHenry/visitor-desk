@@ -25,8 +25,8 @@ function grab(name) {
   throw new Error("unbalanced " + name);
 }
 const ctx = vm.createContext({});
-vm.runInContext(["todayStr", "parseCSV", "IMPORT_COLS", "csvDate", "inviteRows", "MERGE_GAP", "mergeStays", "eventRuns", "I18N", "LANGS", "HELP", "KB_SKIP", "kbWanted", "kbKind", "kbRows"].map(grab).join("\n")
-  + "\nthis.out = { todayStr, parseCSV, csvDate, inviteRows, mergeStays, eventRuns, I18N, LANGS, HELP, kbWanted, kbKind, kbRows };", ctx);
+vm.runInContext(["todayStr", "parseCSV", "IMPORT_COLS", "csvDate", "inviteRows", "MERGE_GAP", "mergeStays", "eventRuns", "I18N", "LANGS", "HELP", "KB_SKIP", "kbWanted", "kbKind", "kbRows", "FIELDS", "fieldList"].map(grab).join("\n")
+  + "\nthis.out = { todayStr, parseCSV, csvDate, inviteRows, mergeStays, eventRuns, I18N, LANGS, HELP, kbWanted, kbKind, kbRows, fieldList };", ctx);
 const P = ctx.out;
 
 test("the page script compiles", () => { new Function(script); });
@@ -145,4 +145,14 @@ test("on-screen keyboard: shown on touch PCs, not on tablets with their own; the
   assert.ok(["ñ", "é", "ç", "ü"].every(k => keys("text", "acc").includes(k)), "accented letters for names");
   assert.equal(keys("numeric").filter(k => /^\d$/.test(k)).sort().join(""), "0123456789");
   assert.ok(keys("tel").includes("+"));
+});
+
+test("visitor fields: extra questions on their step, in the admin's order", () => {
+  const s = { custom: [{ key: "c_a", label: "Plate", type: "text", step: "you" }, { key: "c_b", label: "Parking", type: "choice", choices: ["Yes", "No"], step: "visit" }],
+    fieldOrder: ["name", "c_a", "email", "phone", "company"] };
+  const list = P.fieldList(s), keys = step => list.filter(f => f.step === step).map(f => f.key).join(",");
+  assert.equal(keys("you"), "name,c_a,email,phone,company");
+  assert.equal(keys("visit"), "host,purpose,c_b", "not in the order list yet: after the others");
+  assert.equal(list.find(f => f.key === "c_b").ctype, "choice");
+  assert.equal(P.fieldList({}).map(f => f.key).join(","), "name,email,phone,company,host,purpose,photo,idScan,signature", "no settings: the usual order");
 });

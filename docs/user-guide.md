@@ -152,7 +152,11 @@ The settings page is grouped like this (on a wide screen there's a menu on the l
 ### Kiosk screen
 
 - **What visitors fill in**: each item (email, phone, company, host, reason, photo, license photo, signature) is
-  **Required**, **Optional** or **Hidden**. The host list is one person per line as `name, email, mobile`
+  **Required**, **Optional** or **Hidden**, and the arrows change the order within each step.
+  **Add a question** asks visitors anything else: a short or long answer, a number, a date, a choice from a list or a
+  tick box (for example "I have read the safety rules", set to Required), on the "About you" or "Who you're visiting"
+  step. Questions show as you type them, in every language. Answers are kept with the visit, shown in Visitor records,
+  searchable, and each question gets its own column in the CSV export. These settings are saved on each tablet. The host list is one person per line as `name, email, mobile`
   (for example `Jordan Lee, jordan@acme.com, 813-555-0142`); visitors pick from it or type ahead. Also the visit
   reasons and the agreement text.
 - **Kiosk buttons and languages**: **Leaving? Check out**, **I have an invite code**, **Been here before?** (visitors

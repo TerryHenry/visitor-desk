@@ -523,6 +523,7 @@ function saveVisit(v, result, mode, retentionDays) {
   const record = {
     id, mode,
     name: v.name, email: v.email, phone: v.phone, company: v.company, host: v.host, purpose: v.purpose,
+    extra: cleanExtra(v.extra),
     consented: v.consented, checkedInAt: v.checkedInAt || new Date().toISOString(),
     // From the license barcode, scanned on the tablet. Only these fields are kept (never birth date, address or number).
     license: v.license && typeof v.license === "object" ? {
@@ -553,6 +554,16 @@ function saveVisit(v, result, mode, retentionDays) {
   };
   fs.writeFileSync(path.join(dir, "visit.json"), JSON.stringify(record, null, 2));
   return record;
+}
+
+// Answers to the extra questions an admin added on the tablet ("What visitors fill in"), kept with the label as the
+// visitor saw it, since each tablet has its own list. Text only, limited in size.
+function cleanExtra(x) {
+  if (!Array.isArray(x)) return undefined;
+  const out = x.slice(0, 20).filter(e => e && typeof e === "object")
+    .map(e => ({ label: String(e.label ?? "").replace(/\s+/g, " ").trim().slice(0, 80), value: String(e.value ?? "").trim().slice(0, 1000) }))
+    .filter(e => e.label && e.value);
+  return out.length ? out : undefined;
 }
 
 const VISIT_ID = /^\d{4}-\d{2}-\d{2}T[\dTZ-]+_[0-9a-f]{6}$/;
@@ -1934,7 +1945,7 @@ async function handleAdmin(req, res, url) {
       if (from && d < from) return false;
       if (to && d > to) return false;
       if (since && String(r.checkedInAt || "") < since) return false;
-      return !q || [r.name, r.company, r.host, r.email, r.phone, r.purpose].some(x => String(x || "").toLowerCase().includes(q));
+      return !q || [r.name, r.company, r.host, r.email, r.phone, r.purpose, ...(r.extra || []).map(e => e.value)].some(x => String(x || "").toLowerCase().includes(q));
     }).sort((a, b) => String(b.checkedInAt).localeCompare(String(a.checkedInAt)));
     const filters = [conn ? "with a device connected now" : here && "on site now", from && "from " + from, to && "to " + to, since && "since " + since.slice(0, 16).replace("T", " "), q && `"${q}"`].filter(Boolean);
     return { rows, filters };
@@ -1981,6 +1992,9 @@ async function handleAdmin(req, res, url) {
       ["Agreed to terms", r => r.consented ? "Yes" : ""], ["Signed", r => r.signature === "signature.png" ? "Yes" : ""],
       ["Checked out", r => r.checkedOutAt], ["Checked out by", r => r.checkedOutBy], ["Invited", r => r.inviteId ? "Yes" : ""], ["Devices", r => deviceSummary(r.id)], ["Visit ID", r => r.id]
     ];
+    // One column per extra question asked, after Reason (in the order first seen).
+    const extraLabels = [...new Set(rows.flatMap(r => (r.extra || []).map(e => e.label)))];
+    cols.splice(cols.findIndex(c => c[0] === "Reason") + 1, 0, ...extraLabels.map(l => [l, r => (r.extra || []).find(e => e.label === l)?.value]));
     // Quote every field; a leading = + - @ is prefixed with ' so spreadsheets don't run it as a formula.
     const cell = v => { let t = v === undefined || v === null ? "" : String(v); if (/^[=+\-@\t\r]/.test(t)) t = "'" + t; return '"' + t.replace(/"/g, '""') + '"'; };
     const csv = "\ufeff" + [cols.map(c => cell(c[0])).join(","), ...rows.map(r => cols.map(c => cell(c[1](r))).join(","))].join("\r\n") + "\r\n";
@@ -2964,7 +2978,7 @@ async function check() {
 if (require.main !== module) {
   module.exports = { makePassword, poolRule, passwordFromRule, ruleStrength, e164, normMac, r1Time, firstName, onSite, onlineNow,
     pdfTable, fitText, pdfChars, zoned, zonedMidnight, summaryPeriod, cleanInvite, blockedMatch, normName, normPhone, totp, base32, unbase32,
-    hashPassword, passwordMatches, esc, deviceBrief, devLabel, tarEntries, readKup, netSettings };
+    hashPassword, passwordMatches, esc, deviceBrief, devLabel, tarEntries, readKup, netSettings, cleanExtra };
 } else if (process.argv[2] === "check") {
   check().catch(e => { console.error(e.message); process.exit(1); });
 } else if (process.argv[2] === "reset-admin") {

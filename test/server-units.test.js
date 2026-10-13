@@ -124,3 +124,11 @@ test("device names: the device's own name, not its MAC; else the model without t
   assert.equal(S.devLabel({ hostname: "46f6717e4055", type: "Smartphone" }), "Smartphone");
   assert.equal(S.devLabel({}), "Device");
 });
+
+test("answers to extra questions: text only, limited, empty ones dropped", () => {
+  assert.deepEqual(JSON.parse(JSON.stringify(S.cleanExtra([{ label: "  Vehicle   plate ", value: " ABC 1234 " }, { label: "Empty", value: "" }, { label: "", value: "x" }, "junk", { label: "N", value: 5 }]))),
+    [{ label: "Vehicle plate", value: "ABC 1234" }, { label: "N", value: "5" }]);
+  assert.equal(S.cleanExtra(Array.from({ length: 30 }, (_, i) => ({ label: "Q" + i, value: "a" }))).length, 20);
+  assert.equal(S.cleanExtra([{ label: "x".repeat(200), value: "y".repeat(5000) }])[0].value.length, 1000);
+  assert.equal(S.cleanExtra("nope"), undefined); assert.equal(S.cleanExtra([]), undefined);
+});

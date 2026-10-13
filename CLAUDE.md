@@ -435,6 +435,17 @@ API reference: https://docs.ruckus.cloud/api/
   Identity ids saved at check-in (rec.identityId/identityGroupId); older visits: `dpskIdentity()` reads the passphrase
   or searches the group by dpskGuid. Guest pass (portal) visitors have no identity: pass deleted + disconnect.
 
+## Extra questions and field order (1.10.0)
+- `S.custom` [{key "c_xxxxxx", label, type text|longtext|number|date|choice|checkbox, choices, step you|visit}] and
+  `S.fieldOrder` (keys); modes stay in `S.fields[key]`. `fieldList(s)` = FIELDS + custom, sorted by fieldOrder (unlisted:
+  after, in definition order); each field stays on its step, so only order within a step matters. Kiosk (buildFlow,
+  validate) uses fieldList. Admin editor `fieldsAdmin(d, refresh)` (↑/↓ within a step, Add/Edit/Remove; `keep()`
+  copies the selects into d before redrawing). Per tablet, like the other kiosk settings.
+- Check-in sends `visitor.extra` [{label, value}] (checkbox → "Yes"/"No"); server `cleanExtra()` (≤20, label ≤80,
+  value ≤1000) → record.extra. Shown in the visit details, searched (page and reports), one CSV column per label after
+  Reason. Not in the PDF (fixed columns). Custom labels show as typed in every language (err_required/err_tick/
+  err_number/chooseOne are translated).
+
 ## Releases (GitHub, from 1.8.1)
 - Code: private repo TerryHenry/visitor-desk. Downloads: public repo TerryHenry/visitor-desk-releases (README, docs/,
   releases only; no code), created 2026-10-07 at the user's request (a release can't be public in a private repo). The
