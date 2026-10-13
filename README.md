@@ -19,8 +19,9 @@ the VM starts; the first boot works without internet (RUCKUS One still needs it)
 - **Wi-Fi at check-in.** Each visitor gets a RUCKUS One guest pass, their own DPSK password or the shared password,
   shown as a QR code that joins in one scan, with the device limit and expiry you choose.
 - **Fast check-in on a tablet.** Name, contact details, who they're visiting, a photo and an ID photo through the
-  tablet camera, the agreement and an optional signature. English, Spanish and French. A built-in on-screen
-  keyboard for touch-screen PCs that don't bring up their own.
+  tablet camera, the agreement and an optional signature, plus your own questions (short or long answer, number,
+  date, choice list, tick box), in the order you choose. English, Spanish and French. A built-in on-screen keyboard
+  for touch-screen PCs that don't bring up their own.
 - **Expected visitors.** Invite codes by email or text, multi-day passes for contractors, CSV import, and returning
   visitors who fill in their details from an earlier visit.
 - **Hosts in the loop.** Arrival alerts by email, text, Slack or Teams, a personal page for each host to add their
