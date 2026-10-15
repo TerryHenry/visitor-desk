@@ -54,6 +54,7 @@ afterwards: it's signed with the real key.
 3. Boot the previous release's OVA under qemu, then install the new `.kup` through **Admin → Updates** and check it
    reports the new version; try **Go back to …** too.
 4. Boot the new OVA with `vm/test-boot.sh` and run `vm/smoke-test.sh`.
-5. Publish a GitHub release `v<version>` with the OVA, the `.kup` and a `SHA256SUMS-<version>.txt`, in this
+5. If the screens changed, run `node docs/screenshots.js` to redo the README screenshots (docs/images).
+6. Publish a GitHub release `v<version>` with the OVA, the `.kup` and a `SHA256SUMS-<version>.txt`, in this
    (private) repository and in the public downloads repository `TerryHenry/visitor-desk-releases`. Copy README.md
    (without "Building it yourself") and docs/ there first if they changed.

@@ -14,6 +14,14 @@ visit and tells their host they've arrived. It handles all three access types yo
 The appliance is Ubuntu Server 24.04 LTS with Visitor Desk, Node.js and HTTPS built in. Nothing is downloaded when
 the VM starts; the first boot works without internet (RUCKUS One still needs it).
 
+## Screenshots
+
+| Visitors check in on a tablet | and leave with Wi-Fi access |
+|---|---|
+| ![The kiosk's first step: name, email, phone, company and an added question](docs/images/kiosk-check-in.png) | ![The pass after checking in: Wi-Fi QR code, network, password, expiry and check-out code](docs/images/kiosk-pass.png) |
+| **Staff see who's on site, and where** | **Admins choose what visitors fill in** |
+| ![Visitor records, On site now: each visitor with their devices and the access point they're connected to](docs/images/visitor-records.png) | ![Settings: Required, Optional or Hidden for each field, the order, and an added question](docs/images/settings-questions.png) |
+
 ## Key features
 
 - **Wi-Fi at check-in.** Each visitor gets a RUCKUS One guest pass, their own DPSK password or the shared password,
